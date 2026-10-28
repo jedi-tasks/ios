@@ -27,7 +27,7 @@ struct ReminderNote: Equatable {
     var body: String
 
     /// `Раздел: X` и `Заблокировано: <чем> с <даты>` уходят в поля и убираются из текста.
-    /// Оценки `~30 мин`, `~1,5 ч` суммируются в длительность, текст остаётся.
+    /// Оценки `~30 мин`, `~1,5 ч` суммируются в длительность (до набора её округляет импорт); текст остаётся.
     static func parse(_ notes: String, year: Int = Calendar.current.component(.year, from: Date())) -> ReminderNote {
         var result = ReminderNote(body: "")
         var bodyLines: [Substring] = []

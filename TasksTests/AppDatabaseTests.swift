@@ -110,7 +110,7 @@ struct ReminderImportTests {
         #expect(note.section == "Calories")
         #expect(note.blockerReason == "ответом Пети")
         #expect(note.blockerSinceDay == "2026-10-20")
-        #expect(note.durationMinutes == 105)
+        #expect(note.durationMinutes == 105) // сырая сумма; до набора округляет импорт
         #expect(note.body == "~15 мин grilling + ~1,5 ч реализация")
     }
 
@@ -196,7 +196,7 @@ struct AssignmentTests {
 
         try db.assign(.list(list.id), to: task.id)
         try db.assign(.priority(high.id), to: task.id)
-        try db.assign(.duration(DurationBucket.h1.minutes), to: task.id)
+        try db.assign(.duration(TaskDuration.h1.minutes), to: task.id)
         try db.assign(.plannedDay("2026-10-28"), to: task.id)
         try db.saveTask(try db.addTask(title: "B", listId: nil), tags: ["срочно"])
         let urgent = try db.board().tags.first { $0.name == "срочно" }!
@@ -215,11 +215,11 @@ struct AssignmentTests {
         task.durationMinutes = 45
         try db.saveTask(task, tags: ["дом"])
         let board = try db.board()
-        #expect(board.rows(matching: .duration(.h1)).count == 1)
-        #expect(board.rows(matching: .duration(.m30)).isEmpty)
+        #expect(board.rows(matching: .duration(45)).count == 1)
+        #expect(board.rows(matching: .duration(30)).isEmpty)
         #expect(board.rows(matching: .priority(nil)).count == 1)
         #expect(board.rows(matching: .tag(board.tags[0].id)).count == 1)
-        #expect(DurationBucket.of(300) == .more && DurationBucket.of(15) == .m15)
+        #expect(TaskDuration.of(300) == .h5 && TaskDuration.of(15) == .m15 && TaskDuration.of(-1) == .unpredictable)
     }
 }
 
@@ -277,5 +277,56 @@ struct WorkloadTests {
         #expect(load.minutes == 135 && load.unestimated == 1)
         #expect(load.summary == "≈ 2 ч 15 мин · 1 без оценки")
         #expect(board.overdue("2026-10-28").map(\.task.title) == ["Old"])
+    }
+}
+
+struct UnpredictableTests {
+    @Test func unpredictableIsCountedSeparately() {
+        var a = TaskItem(listId: UUID(), title: "A", durationMinutes: TaskDuration.unpredictable.minutes)
+        a.manualOrder = 0
+        let b = TaskItem(listId: UUID(), title: "B", durationMinutes: 30)
+        let rows = [a, b].map { TaskRow(task: $0, priority: nil, tags: [], blockers: []) }
+        #expect(Workload(rows).summary == "≈ 30 мин · 1 непрогнозируемо долго")
+    }
+}
+
+struct DurationOptionsTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func seededChangedAndDeletedOptionsMoveTasks() throws {
+        #expect(try db.board().durations.map(\.minutes) == [5, 15, 30, 60, 120, 300, -1])
+        var task = try db.addTask(title: "A", listId: nil)
+        task.durationMinutes = 60
+        try db.saveTask(task)
+
+        var hour = try #require(try db.board().durations.first { $0.minutes == 60 })
+        hour.minutes = 90
+        try db.saveDuration(hour)
+        #expect(try db.board().row(task.id)?.task.durationMinutes == 90)
+
+        try db.deleteDuration(hour.id)
+        #expect(try db.board().row(task.id)?.task.durationMinutes == 120)
+    }
+
+    @Test func importSnapsToCurrentSet() throws {
+        let reminder = ImportedReminder(externalId: "x", listName: "Inbox", title: "T", notes: "~1,5 ч + ~15 мин",
+                                        dueDay: nil, priority: 0, completedAt: nil)
+        _ = try db.importReminders([reminder])
+        #expect(try db.board().rows.first?.task.durationMinutes == 120)
+        #expect(DurationSnap.nearest(-1, in: [5, -1]) == -1)
+    }
+}
+
+struct SearchTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func findsByTitleAndNotesOpenFirst() throws {
+        var done = try db.addTask(title: "Купить кофе", listId: nil)
+        try db.setCompleted(done.id, true)
+        done = try db.addTask(title: "Позвонить", listId: nil)
+        done.notes = "про кофе"
+        try db.saveTask(done)
+        try db.addTask(title: "Другое", listId: nil)
+        #expect(try db.board().search("кофе").map(\.task.title) == ["Позвонить", "Купить кофе"])
     }
 }

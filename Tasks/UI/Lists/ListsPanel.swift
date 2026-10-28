@@ -20,7 +20,7 @@ struct ListsPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
                 if showsTiles {
                     tiles.padding(.bottom, 12)
                 } else if let inbox = board.inbox {
@@ -49,8 +49,17 @@ struct ListsPanel: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(panelBackground)
         .errorAlert(errors)
+    }
+
+    /// На Mac боковая панель прозрачная — сквозь неё виден отсвет обоев, как в Напоминаниях.
+    private var panelBackground: Color {
+        #if targetEnvironment(macCatalyst)
+        showsTiles ? .clear : Color(.systemGroupedBackground)
+        #else
+        Color(.systemGroupedBackground)
+        #endif
     }
 
     private func header(_ title: String) -> some View {
@@ -134,7 +143,7 @@ private struct ListPanelRow: View {
             }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 6)
         .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
         .modifier(ListDragSource(listId: onDropLists == nil ? nil : list.id))
         .dropDestination(for: String.self) { items, _ in
@@ -143,16 +152,17 @@ private struct ListPanelRow: View {
                 onDropLists(lists)
                 return true
             }
-            let tasks = items.compactMap(DragPayload.taskId)
+            let tasks = items.flatMap(DragPayload.taskIds)
             for id in tasks { try? database.assign(.list(list.id), to: id) }
             return !tasks.isEmpty
         } isTargeted: { targeted = $0 }
     }
 
+    /// Обычный перечень: фон только у выбранного списка и под перетаскиваемой задачей.
     private var background: Color {
         if targeted { return Color.accentColor.opacity(0.25) }
         if isSelected { return Color(hex: list.colorHex).opacity(0.2) }
-        return Color(.secondarySystemGroupedBackground)
+        return .clear
     }
 }
 
@@ -168,8 +178,18 @@ private struct ListDragSource: ViewModifier {
     }
 }
 
-/// Что перетаскивается строкой: задача — голый UUID, список — `list:UUID`.
+/// Что перетаскивается строкой: задачи — `tasks:UUID,UUID` (или голый UUID), список — `list:UUID`.
 enum DragPayload {
+    static func tasks(_ ids: [UUID]) -> String { "tasks:" + ids.map(\.uuidString).joined(separator: ",") }
+
+    /// Все задачи из строки: при мультивыборе их несколько.
+    static func taskIds(_ payload: String) -> [UUID] {
+        if payload.hasPrefix("tasks:") {
+            return payload.dropFirst(6).split(separator: ",").compactMap { UUID(uuidString: String($0)) }
+        }
+        return taskId(payload).map { [$0] } ?? []
+    }
+
     static func list(_ id: UUID) -> String { "list:" + id.uuidString }
 
     static func listId(_ payload: String) -> UUID? {
@@ -187,7 +207,7 @@ private struct TaskDropTarget: ViewModifier {
     func body(content: Content) -> some View {
         if let assignment {
             content.dropDestination(for: String.self) { items, _ in
-                let ids = items.compactMap(DragPayload.taskId)
+                let ids = items.flatMap(DragPayload.taskIds)
                 for id in ids { try? database.assign(assignment, to: id) }
                 return !ids.isEmpty
             }

@@ -42,6 +42,7 @@ struct AppDatabase: Sendable {
         let lists = try TaskList.filter(alive).order(Column("isInbox").desc, Column("sortOrder")).fetchAll(db)
         let sections = try ListSection.filter(alive).order(Column("sortOrder")).fetchAll(db)
         let priorities = try Priority.filter(alive).order(Column("sortOrder")).fetchAll(db)
+        let durations = try fetchDurations(db)
         let tags = try Tag.filter(alive).order(Column("name").collating(.localizedCaseInsensitiveCompare)).fetchAll(db)
         let taskTags = try TaskTag.filter(alive).fetchAll(db)
         let blockers = try Blocker.filter(alive).order(Column("sinceDay")).fetchAll(db)
@@ -61,7 +62,7 @@ struct AppDatabase: Sendable {
                 blockers: blockersByTask[task.id] ?? []
             )
         }
-        return Board(lists: lists, sections: sections, priorities: priorities, tags: tags, rows: rows)
+        return Board(lists: lists, sections: sections, priorities: priorities, durations: durations, tags: tags, rows: rows)
     }
 
     // MARK: - Списки и разделы
@@ -161,6 +162,40 @@ struct AppDatabase: Sendable {
             let now = Date()
             try db.execute(sql: "UPDATE priority SET deletedAt = ?, updatedAt = ? WHERE id = ?", arguments: [now, now, id])
             try db.execute(sql: "UPDATE taskItem SET priorityId = NULL, updatedAt = ? WHERE priorityId = ?", arguments: [now, id])
+        }
+    }
+
+    // MARK: - Длительности
+
+    static func fetchDurations(_ db: Database) throws -> [DurationOption] {
+        try DurationOption.filter(Column("deletedAt") == nil).fetchAll(db)
+            .sorted { ($0.minutes < 0 ? Int.max : $0.minutes) < ($1.minutes < 0 ? Int.max : $1.minutes) }
+    }
+
+    /// Сохраняет значение; если поменялись минуты — задачи со старым значением переходят на новое.
+    func saveDuration(_ option: DurationOption) throws {
+        try writer.write { db in
+            let now = Date()
+            if let old = try DurationOption.fetchOne(db, key: option.id), old.minutes != option.minutes {
+                try db.execute(sql: "UPDATE taskItem SET durationMinutes = ?, updatedAt = ? WHERE durationMinutes = ? AND deletedAt IS NULL",
+                               arguments: [option.minutes, now, old.minutes])
+            }
+            var option = option
+            option.updatedAt = now
+            try option.save(db)
+        }
+    }
+
+    /// Задачи удалённого значения переходят к ближайшему оставшемуся (или остаются без оценки).
+    func deleteDuration(_ id: UUID) throws {
+        try writer.write { db in
+            guard let option = try DurationOption.fetchOne(db, key: id) else { return }
+            let now = Date()
+            try db.execute(sql: "UPDATE durationOption SET deletedAt = ?, updatedAt = ? WHERE id = ?", arguments: [now, now, id])
+            let rest = try Self.fetchDurations(db).map(\.minutes)
+            let target = DurationSnap.nearest(option.minutes, in: rest)
+            try db.execute(sql: "UPDATE taskItem SET durationMinutes = ?, updatedAt = ? WHERE durationMinutes = ? AND deletedAt IS NULL",
+                           arguments: [target, now, option.minutes])
         }
     }
 
@@ -338,6 +373,7 @@ struct AppDatabase: Sendable {
             let known = Set(try String.fetchAll(db, sql: "SELECT externalId FROM taskItem WHERE externalId IS NOT NULL"))
             let priorities = try Priority.filter(Column("deletedAt") == nil).order(Column("sortOrder")).fetchAll(db)
             var order = try Self.nextOrder(db, table: "taskItem", column: "manualOrder")
+            let durationValues = try Self.fetchDurations(db).map(\.minutes)
 
             for reminder in reminders {
                 guard !known.contains(reminder.externalId) else { result.skipped += 1; continue }
@@ -351,7 +387,7 @@ struct AppDatabase: Sendable {
                     notes: note.body,
                     priorityId: Self.priority(for: reminder.priority, in: priorities)?.id,
                     plannedDay: reminder.dueDay,
-                    durationMinutes: note.durationMinutes,
+                    durationMinutes: note.durationMinutes.flatMap { DurationSnap.nearest($0, in: durationValues) },
                     manualOrder: order,
                     completedAt: reminder.completedAt,
                     externalId: reminder.externalId,
@@ -533,6 +569,31 @@ struct AppDatabase: Sendable {
         migrator.registerMigration("v5-prune-tags") { db in
             // Уборка тегов, набежавших от сохранения на каждую букву
             try pruneTags(db, now: Date())
+        }
+
+        migrator.registerMigration("v6-fixed-durations") { db in
+            // Длительности — фиксированный набор: старые значения — к ближайшему
+            let rows = try Row.fetchAll(db, sql: "SELECT id, durationMinutes FROM taskItem WHERE durationMinutes IS NOT NULL")
+            for row in rows {
+                let minutes: Int = row["durationMinutes"]
+                let snapped = TaskDuration.of(minutes).minutes
+                if snapped != minutes {
+                    try db.execute(sql: "UPDATE taskItem SET durationMinutes = ? WHERE id = ?", arguments: [snapped, row["id"] as UUID])
+                }
+            }
+        }
+
+        migrator.registerMigration("v7-duration-options") { db in
+            try db.create(table: "durationOption") { t in
+                t.primaryKey("id", .blob)
+                t.column("title", .text).notNull()
+                t.column("minutes", .integer).notNull()
+                t.column("updatedAt", .datetime).notNull()
+                t.column("deletedAt", .datetime)
+            }
+            for option in TaskDuration.allCases {
+                try DurationOption(title: option.title, minutes: option.minutes).insert(db)
+            }
         }
 
         return migrator

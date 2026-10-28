@@ -61,6 +61,21 @@ extension Priority: FetchableRecord, PersistableRecord {
     static let databaseTableName = "priority"
 }
 
+/// Значение из справочника длительностей. `minutes < 0` — «непрогнозируемо долго», в сумму не входит.
+struct DurationOption: Codable, Identifiable, Hashable, Sendable {
+    var id: UUID = UUID()
+    var title: String
+    var minutes: Int
+    var updatedAt: Date = Date()
+    var deletedAt: Date?
+
+    var isUnpredictable: Bool { minutes < 0 }
+}
+
+extension DurationOption: FetchableRecord, PersistableRecord {
+    static let databaseTableName = "durationOption"
+}
+
 struct TaskItem: Codable, Identifiable, Hashable, Sendable {
     var id: UUID = UUID()
     var listId: UUID

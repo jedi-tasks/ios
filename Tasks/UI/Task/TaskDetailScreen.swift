@@ -94,7 +94,7 @@ struct TaskDetailScreen: View {
             Section {
                 DayField(title: "Планируемый срок", icon: "calendar", day: binding(\.plannedDay))
                 DayField(title: "Дедлайн", icon: "flag", day: binding(\.deadlineDay))
-                DurationField(minutes: binding(\.durationMinutes))
+                DurationField(minutes: binding(\.durationMinutes), options: board.durations)
             }
 
             Section("Теги") {
@@ -308,21 +308,21 @@ private struct DayField: View {
     }
 }
 
-/// Оценка длительности шагом 15 минут.
+/// Длительность — выбор из фиксированного набора.
 private struct DurationField: View {
     @Binding var minutes: Int?
+    let options: [DurationOption]
 
     var body: some View {
-        if let value = minutes {
-            HStack {
-                Stepper(value: Binding(get: { value }, set: { minutes = max(5, $0) }), in: 5...(24 * 60), step: 15) {
-                    Label(TaskRowView.duration(value), systemImage: "clock")
-                }
-                Button("Убрать", systemImage: "xmark.circle.fill") { minutes = nil }
-                    .labelStyle(.iconOnly).foregroundStyle(.secondary).buttonStyle(.plain)
+        Picker(selection: $minutes) {
+            Text("Без оценки").tag(Int?.none)
+            ForEach(options) { Text($0.title).tag(Int?.some($0.minutes)) }
+            // Значение не из набора (например, набор поменяли) — показываем как есть
+            if let minutes, !options.contains(where: { $0.minutes == minutes }) {
+                Text(Workload.format(minutes)).tag(Int?.some(minutes))
             }
-        } else {
-            Button { minutes = 30 } label: { Label("Планируемое время", systemImage: "clock") }
+        } label: {
+            Label("Длительность", systemImage: "clock")
         }
     }
 }

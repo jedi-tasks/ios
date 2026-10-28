@@ -16,7 +16,8 @@ enum TaskOrdering {
         case .priority: optional(a.priority?.sortOrder, b.priority?.sortOrder)
         case .plannedDay: optional(a.task.plannedDay, b.task.plannedDay)
         case .deadline: optional(a.task.deadlineDay, b.task.deadlineDay)
-        case .duration: optional(a.task.durationMinutes, b.task.durationMinutes)
+        // «Непрогнозируемо долго» (-1) — самое длинное
+        case .duration: optional(a.task.durationMinutes.map { $0 < 0 ? .max : $0 }, b.task.durationMinutes.map { $0 < 0 ? .max : $0 })
         }
     }
 

@@ -135,7 +135,7 @@ struct ListScreen: View {
 
     /// Переставляет брошенные задачи перед `target` (или в конец раздела) в видимом порядке списка.
     private func place(_ items: [String], before target: UUID?, section: UUID?, all: [TaskRow]) -> Bool {
-        let moved = items.compactMap(DragPayload.taskId).filter { $0 != target }
+        let moved = items.flatMap(DragPayload.taskIds).filter { $0 != target }
         guard !moved.isEmpty else { return false }
         // Видимый порядок: без раздела, затем разделы по порядку
         let sectionOrder = [nil] + board.sections(of: listId).map { Optional($0.id) }

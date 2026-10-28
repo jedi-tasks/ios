@@ -19,6 +19,8 @@ struct Board: Sendable {
     var lists: [TaskList] = []
     var sections: [ListSection] = []
     var priorities: [Priority] = []
+    /// Справочник длительностей по возрастанию, «непрогнозируемо долго» — в конце.
+    var durations: [DurationOption] = []
     var tags: [Tag] = []
     var rows: [TaskRow] = []
 
@@ -42,6 +44,14 @@ struct Board: Sendable {
         return Dictionary(grouping: dated, by: \.0)
             .map { (day: $0.key, rows: TaskOrdering.sorted($0.value.map(\.1), by: .priority)) }
             .sorted { $0.day < $1.day }
+    }
+
+    /// Поиск по названию и описанию во всех списках; невыполненные — выше.
+    func search(_ query: String) -> [TaskRow] {
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        let found = rows.filter { $0.task.title.localizedCaseInsensitiveContains(q) || $0.task.notes.localizedCaseInsensitiveContains(q) }
+        return found.filter { !$0.isDone } + found.filter(\.isDone)
     }
 
     /// «Сегодня»: невыполненные с планируемым сроком или дедлайном не позже сегодня.

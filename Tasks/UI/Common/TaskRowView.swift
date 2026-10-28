@@ -39,9 +39,6 @@ struct TaskRowView: View {
             }
         }
         .opacity(row.isBlocked && !row.isDone ? 0.5 : 1)
-        // Бросить на список, приоритет, тег, длительность или день — задача примет значение.
-        // Без contextMenu: оно перехватывает долгое нажатие, и перетаскивание не начинается.
-        .draggable(row.id.uuidString) { Text(row.task.title).padding(8).background(.regularMaterial, in: Capsule()) }
         .errorAlert(errors)
     }
 

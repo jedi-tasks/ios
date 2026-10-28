@@ -17,9 +17,9 @@ struct SmartSections: View {
             chip(.priority(nil), drop: .priority(nil)) { Text("Не разобрано") }
         }
         chips("Длительность") {
-            ForEach(DurationBucket.allCases, id: \.self) { bucket in
-                chip(.duration(bucket), drop: .duration(bucket.minutes)) {
-                    Text("⏱ " + bucket.title)
+            ForEach(board.durations) { option in
+                chip(.duration(option.minutes), drop: .duration(option.minutes)) {
+                    Text("⏱ " + option.title)
                 }
             }
         }
@@ -71,7 +71,7 @@ private struct Chip: View {
         }
         .buttonStyle(.plain)
         .dropDestination(for: String.self) { items, _ in
-            let ids = items.compactMap(UUID.init(uuidString:))
+            let ids = items.flatMap(DragPayload.taskIds)
             for id in ids { try? database.assign(drop, to: id) }
             return !ids.isEmpty
         } isTargeted: { targeted = $0 }

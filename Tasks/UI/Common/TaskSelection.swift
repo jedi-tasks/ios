@@ -18,12 +18,26 @@ extension EnvironmentValues {
 }
 
 /// Строка задачи: в обычном режиме открывает карточку, в режиме выбора — отмечает задачу.
+/// Строку можно перетащить на список, плашку или день — задача (или все отмеченные) примет значение.
 struct TaskLink<Content: View>: View {
     let id: UUID
     @ViewBuilder let content: Content
     @Environment(\.taskSelection) private var selection
 
     var body: some View {
+        // Под пальцем/курсором — значок, а не вся строка, как в Напоминаниях
+        link.onDrag { NSItemProvider(object: DragPayload.tasks(draggedIds) as NSString) } preview: {
+            DragBadge(count: draggedIds.count)
+        }
+    }
+
+    /// Перетаскивается отмеченная задача — значит, все отмеченные, как в Напоминаниях.
+    private var draggedIds: [UUID] {
+        if let selection, selection.isSelecting, selection.selected.contains(id) { return Array(selection.selected) }
+        return [id]
+    }
+
+    @ViewBuilder private var link: some View {
         if let selection, selection.isSelecting {
             // Отметку рисует кружок самой строки; тап по любому месту строки — тоже отметка
             Button { selection.toggle(id) } label: { content.contentShape(Rectangle()) }
@@ -31,6 +45,31 @@ struct TaskLink<Content: View>: View {
         } else {
             NavigationLink(value: id) { content }
         }
+    }
+}
+
+/// Значок перетаскиваемых задач: иконка и, если задач несколько, их число.
+private struct DragBadge: View {
+    let count: Int
+
+    var body: some View {
+        Image(systemName: "checklist")
+            .font(.system(size: 20, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: 44, height: 44)
+            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(alignment: .topTrailing) {
+                if count > 1 {
+                    Text("\(count)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(.red, in: Capsule())
+                        .offset(x: 8, y: -8)
+                }
+            }
+            .padding(10)
     }
 }
 
@@ -94,8 +133,8 @@ private struct TaskSelection: ViewModifier {
             Button("Не разобрано") { assign(.priority(nil)) }
         }
         Menu("Длительность", systemImage: "clock") {
-            ForEach(DurationBucket.allCases, id: \.self) { bucket in
-                Button(TaskRowView.duration(bucket.minutes)) { assign(.duration(bucket.minutes)) }
+            ForEach(board.durations) { option in
+                Button(option.title) { assign(.duration(option.minutes)) }
             }
             Button("Без оценки") { assign(.duration(nil)) }
         }

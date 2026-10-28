@@ -5,12 +5,18 @@ struct Workload: Equatable, Sendable {
     var minutes = 0
     /// Задачи без оценки — в сумму не входят, но о них стоит знать.
     var unestimated = 0
+    /// «Непрогнозируемо долго» — в сумму не входят.
+    var unpredictable = 0
     var count = 0
 
     init(_ rows: [TaskRow]) {
         for row in rows {
             count += 1
-            if let value = row.task.durationMinutes { minutes += value } else { unestimated += 1 }
+            switch row.task.durationMinutes {
+            case nil: unestimated += 1
+            case let value? where value < 0: unpredictable += 1
+            case let value?: minutes += value
+            }
         }
     }
 
@@ -19,11 +25,13 @@ struct Workload: Equatable, Sendable {
         guard count > 0 else { return "" }
         var parts: [String] = []
         if minutes > 0 { parts.append("≈ " + Self.format(minutes)) }
+        if unpredictable > 0 { parts.append("\(unpredictable) непрогнозируемо долго") }
         if unestimated > 0 { parts.append("\(unestimated) без оценки") }
         return parts.joined(separator: " · ")
     }
 
     static func format(_ minutes: Int) -> String {
+        if minutes < 0 { return "Непрогнозируемо долго" }
         if minutes < 60 { return "\(minutes) мин" }
         return minutes % 60 == 0 ? "\(minutes / 60) ч" : "\(minutes / 60) ч \(minutes % 60) мин"
     }
