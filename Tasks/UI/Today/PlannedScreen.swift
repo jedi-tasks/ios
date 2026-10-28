@@ -14,7 +14,7 @@ struct PlannedScreen: View {
                 Section {
                     ForEach(group.rows) { row in
                         NavigationLink(value: row.id) {
-                            TaskRowView(row: row, showList: board.list(row.task.listId)?.name, hidesTodayDate: true)
+                            TaskRowView(row: row, showList: board.list(row.task.listId)?.name, hidesTodayDate: true, board: board)
                         }
                         .listRowSeparator(.hidden)
                     }

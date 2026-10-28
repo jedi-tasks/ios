@@ -182,3 +182,63 @@ struct PlannedTests {
         #expect(PlannedScreen.title("0000-00-00", today: "2026-10-28") == "Просрочено")
     }
 }
+
+struct AssignmentTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func droppingOnObjectsSetsValues() throws {
+        let list = TaskList(name: "LeadLinks")
+        try db.saveList(list)
+        let task = try db.addTask(title: "A", listId: nil)
+        try db.saveTask(task, tags: ["дом"])
+        let board = try db.board()
+        let high = board.priorities[0]
+
+        try db.assign(.list(list.id), to: task.id)
+        try db.assign(.priority(high.id), to: task.id)
+        try db.assign(.duration(DurationBucket.h1.minutes), to: task.id)
+        try db.assign(.plannedDay("2026-10-28"), to: task.id)
+        try db.saveTask(try db.addTask(title: "B", listId: nil), tags: ["срочно"])
+        let urgent = try db.board().tags.first { $0.name == "срочно" }!
+        try db.assign(.tag(urgent.id), to: task.id)
+
+        let row = try db.board().row(task.id)!
+        #expect(row.task.listId == list.id)
+        #expect(row.priority?.id == high.id)
+        #expect(row.task.durationMinutes == 60)
+        #expect(row.task.plannedDay == "2026-10-28")
+        #expect(row.tags.map(\.name) == ["дом", "срочно"])
+    }
+
+    @Test func filtersMatchBucketsPrioritiesAndTags() throws {
+        var task = try db.addTask(title: "A", listId: nil)
+        task.durationMinutes = 45
+        try db.saveTask(task, tags: ["дом"])
+        let board = try db.board()
+        #expect(board.rows(matching: .duration(.h1)).count == 1)
+        #expect(board.rows(matching: .duration(.m30)).isEmpty)
+        #expect(board.rows(matching: .priority(nil)).count == 1)
+        #expect(board.rows(matching: .tag(board.tags[0].id)).count == 1)
+        #expect(DurationBucket.of(300) == .more && DurationBucket.of(15) == .m15)
+    }
+}
+
+struct ArrangeTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func arrangeReordersMovesSectionAndSwitchesToManual() throws {
+        let list = TaskList(name: "L", sortMode: .priority)
+        try db.saveList(list)
+        let section = ListSection(listId: list.id, name: "S")
+        try db.saveSection(section)
+        let a = try db.addTask(title: "A", listId: list.id)
+        let b = try db.addTask(title: "B", listId: list.id)
+        let c = try db.addTask(title: "C", listId: list.id)
+
+        try db.arrange(list: list.id, order: [c.id, a.id, b.id], moved: [c.id], section: section.id)
+        let board = try db.board()
+        #expect(board.list(list.id)?.sortMode == .manual)
+        #expect(TaskOrdering.sorted(board.rows(in: list.id, done: false), by: .manual).map(\.task.title) == ["C", "A", "B"])
+        #expect(board.row(c.id)?.task.sectionId == section.id)
+    }
+}

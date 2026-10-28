@@ -89,6 +89,22 @@ struct AppDatabase: Sendable {
         }
     }
 
+    /// Ручная расстановка списка после перетаскивания: `order` — все открытые задачи списка в новом порядке,
+    /// `moved` переезжают в `section` этого списка. Список переключается на ручную сортировку.
+    func arrange(list listId: UUID, order: [UUID], moved: [UUID], section: UUID?) throws {
+        try writer.write { db in
+            let now = Date()
+            try db.execute(sql: "UPDATE taskList SET sortMode = ?, updatedAt = ? WHERE id = ?", arguments: [SortMode.manual, now, listId])
+            for id in moved {
+                try db.execute(sql: "UPDATE taskItem SET listId = ?, sectionId = ?, updatedAt = ? WHERE id = ?",
+                               arguments: [listId, section, now, id])
+            }
+            for (index, id) in order.enumerated() {
+                try db.execute(sql: "UPDATE taskItem SET manualOrder = ?, updatedAt = ? WHERE id = ?", arguments: [Double(index), now, id])
+            }
+        }
+    }
+
     func setSortMode(_ mode: SortMode, list id: UUID) throws {
         try writer.write { db in
             try db.execute(sql: "UPDATE taskList SET sortMode = ?, updatedAt = ? WHERE id = ?", arguments: [mode, Date(), id])
@@ -222,6 +238,38 @@ struct AppDatabase: Sendable {
         for tagId in Set(tagIds) {
             try TaskTag(taskId: task, tagId: tagId, updatedAt: now).save(db)
         }
+    }
+
+    /// Что можно назначить задаче броском на объект (список, приоритет, тег…) или из меню.
+    enum Assignment: Sendable {
+        case list(UUID)
+        case priority(UUID?)
+        case duration(Int?)
+        case tag(UUID)
+        case plannedDay(String?)
+    }
+
+    func assign(_ assignment: Assignment, to taskId: UUID) throws {
+        if case .tag(let tagId) = assignment {
+            try writer.write { db in
+                // Тег добавляется к имеющимся, а не заменяет их
+                try TaskTag(taskId: taskId, tagId: tagId, updatedAt: Date()).save(db)
+                try db.execute(sql: "UPDATE taskItem SET updatedAt = ? WHERE id = ?", arguments: [Date(), taskId])
+            }
+            return
+        }
+        guard var task = try writer.read({ try TaskItem.fetchOne($0, key: taskId) }) else { return }
+        switch assignment {
+        case .list(let id):
+            guard task.listId != id else { return }
+            task.listId = id
+            task.sectionId = nil
+        case .priority(let id): task.priorityId = id
+        case .duration(let minutes): task.durationMinutes = minutes
+        case .plannedDay(let day): task.plannedDay = day
+        case .tag: break
+        }
+        try saveTask(task)
     }
 
     // MARK: - Блокеры

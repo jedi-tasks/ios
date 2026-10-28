@@ -5,16 +5,19 @@ struct ListsScreen: View {
     @Environment(\.database) private var database
     @State private var board = Board()
     @State private var editing: TaskList?
+    @State private var openedFilter: TaskFilter?
     @State private var errors = ErrorAlert()
 
     var body: some View {
         List {
             if let inbox = board.inbox {
                 NavigationLink(value: inbox.id) { ListRowLabel(list: inbox, count: board.rows(in: inbox.id, done: false).count) }
+                    .taskDrop(.list(inbox.id))
             }
-            Section("Списки") {
+            Section(board.userLists.isEmpty ? "" : "Списки") {
                 ForEach(board.userLists) { list in
                     NavigationLink(value: list.id) { ListRowLabel(list: list, count: board.rows(in: list.id, done: false).count) }
+                        .taskDrop(.list(list.id))
                         .swipeActions(edge: .leading) {
                             Button("Изменить", systemImage: "pencil") { editing = list }.tint(Color(hex: list.colorHex))
                         }
@@ -28,9 +31,11 @@ struct ListsScreen: View {
                     errors.run { for index in offsets { try database.deleteList(board.userLists[index].id) } }
                 }
             }
+            SmartSections(board: board) { openedFilter = $0 }
         }
         .navigationTitle("Списки")
         .navigationDestination(for: UUID.self) { ListScreen(listId: $0) }
+        .navigationDestination(item: $openedFilter) { FilteredScreen(filter: $0) }
         .toolbar {
             ToolbarItem { EditButton() }
             ToolbarItem { Button("Новый список", systemImage: "plus") { editing = TaskList(name: "") } }

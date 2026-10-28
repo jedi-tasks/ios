@@ -6,6 +6,8 @@ struct TaskRowView: View {
     var showList: String?
     /// В «Сегодня» планируемый срок на сегодня очевиден — не показываем.
     var hidesTodayDate = false
+    /// Для меню «назначить»: списки, приоритеты, теги.
+    var board: Board?
     @Environment(\.database) private var database
     @State private var errors = ErrorAlert()
 
@@ -26,7 +28,44 @@ struct TaskRowView: View {
             }
         }
         .opacity(row.isBlocked && !row.isDone ? 0.5 : 1)
+        // Бросить на список, приоритет, тег или длительность — задача примет значение
+        .draggable(row.id.uuidString) { Text(row.task.title).padding(8).background(.regularMaterial, in: Capsule()) }
+        .contextMenu { if let board { assignMenu(board) } }
         .errorAlert(errors)
+    }
+
+    /// То же, что перетаскивание, но из меню — для iPhone.
+    @ViewBuilder
+    private func assignMenu(_ board: Board) -> some View {
+        Button("На сегодня", systemImage: "sun.max") { assign(.plannedDay(DayKey.today)) }
+        Menu("Список", systemImage: "list.bullet") {
+            ForEach(board.lists) { list in
+                Button(list.name) { assign(.list(list.id)) }
+            }
+        }
+        Menu("Приоритет", systemImage: "exclamationmark") {
+            ForEach(board.priorities) { priority in
+                Button("\(priority.marks) \(priority.name)") { assign(.priority(priority.id)) }
+            }
+            Button("Не разобрано") { assign(.priority(nil)) }
+        }
+        Menu("Длительность", systemImage: "clock") {
+            ForEach(DurationBucket.allCases, id: \.self) { bucket in
+                Button(Self.duration(bucket.minutes)) { assign(.duration(bucket.minutes)) }
+            }
+            Button("Без оценки") { assign(.duration(nil)) }
+        }
+        if !board.tags.isEmpty {
+            Menu("Добавить тег", systemImage: "number") {
+                ForEach(board.tags.filter { tag in !row.tags.contains { $0.id == tag.id } }) { tag in
+                    Button(tag.name) { assign(.tag(tag.id)) }
+                }
+            }
+        }
+    }
+
+    private func assign(_ assignment: AppDatabase.Assignment) {
+        errors.run { try database.assign(assignment, to: row.id) }
     }
 
     private var priorityMarks: Text {

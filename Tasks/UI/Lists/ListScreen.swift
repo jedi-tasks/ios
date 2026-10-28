@@ -25,13 +25,13 @@ struct ListScreen: View {
         let mode = list?.sortMode ?? .manual
         let open = TaskOrdering.sorted(board.rows(in: listId, done: false), by: mode)
         List {
-            group(open.filter { $0.task.sectionId == nil }, mode: mode)
+            group(open.filter { $0.task.sectionId == nil }, section: nil, all: open)
             newRow(NewTaskTarget(), list: list)
             ForEach(board.sections(of: listId)) { section in
                 let rows = open.filter { $0.task.sectionId == section.id }
                 let collapsed = collapsedIds.contains(section.id.uuidString)
                 Section {
-                    if !collapsed { group(rows, mode: mode) }
+                    if !collapsed { group(rows, section: section.id, all: open) }
                     newRow(NewTaskTarget(sectionId: section.id), list: list)
                 } header: {
                     HStack {
@@ -45,7 +45,7 @@ struct ListScreen: View {
                                 Text(section.name).font(.title3.bold())
                                 if collapsed && !rows.isEmpty { Text("\(rows.count)").foregroundStyle(.secondary) }
                             }
-                            .foregroundStyle(.tint)
+                            .foregroundStyle(.primary)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
@@ -53,11 +53,15 @@ struct ListScreen: View {
                         Button("Добавить", systemImage: "plus") { add(NewTaskTarget(sectionId: section.id)) }
                             .labelStyle(.iconOnly)
                     }
+                    // Бросок на заголовок — в конец раздела
+                    .dropDestination(for: String.self) { items, _ in
+                        place(items, before: nil, section: section.id, all: open)
+                    }
                 }
             }
             if showDone {
                 let done = board.rows(in: listId, done: true).sorted { ($0.task.completedAt ?? .distantPast) > ($1.task.completedAt ?? .distantPast) }
-                Section("Выполненные") { group(done, mode: .plannedDay, movable: false) }
+                Section("Выполненные") { group(done, section: nil, all: [], movable: false) }
             }
         }
         // Строки на всю ширину с разделителями, как в Напоминаниях
@@ -104,29 +108,41 @@ struct ListScreen: View {
         }
     }
 
-    /// Строки группы. В ручном режиме можно перетаскивать — порядок пишется в `manualOrder`.
+    /// Строки группы. Задачу можно бросить на другую — встанет перед ней (и в её раздел).
     @ViewBuilder
-    private func group(_ rows: [TaskRow], mode: SortMode, movable: Bool = true) -> some View {
+    private func group(_ rows: [TaskRow], section: UUID?, all: [TaskRow], movable: Bool = true) -> some View {
         ForEach(rows) { row in
-            NavigationLink(value: row.id) { TaskRowView(row: row) }
+            NavigationLink(value: row.id) { TaskRowView(row: row, board: board) }
                 .listRowSeparator(.hidden)
-        }
-        .onMove(perform: movable && mode == .manual ? { from, to in
-            var ids = rows.map(\.id)
-            ids.move(fromOffsets: from, toOffset: to)
-            // Внутри группы переставляем, сохраняя занятые ею значения порядка
-            let slots = rows.map(\.task.manualOrder).sorted()
-            errors.run {
-                for (id, order) in zip(ids, slots) {
-                    guard var task = board.row(id)?.task, task.manualOrder != order else { continue }
-                    task.manualOrder = order
-                    try database.saveTask(task)
+                .dropDestination(for: String.self) { items, _ in
+                    movable && place(items, before: row.id, section: section, all: all)
                 }
-            }
-        } : nil)
+        }
         .onDelete { offsets in
             errors.run { for index in offsets { try database.deleteTask(rows[index].id) } }
         }
+    }
+
+    /// Переставляет брошенные задачи перед `target` (или в конец раздела) в видимом порядке списка.
+    private func place(_ items: [String], before target: UUID?, section: UUID?, all: [TaskRow]) -> Bool {
+        let moved = items.compactMap(UUID.init(uuidString:)).filter { $0 != target }
+        guard !moved.isEmpty else { return false }
+        // Видимый порядок: без раздела, затем разделы по порядку
+        let sectionOrder = [nil] + board.sections(of: listId).map { Optional($0.id) }
+        var order = sectionOrder.flatMap { id in all.filter { $0.task.sectionId == id }.map(\.id) }
+        order.removeAll { moved.contains($0) }
+        let index: Int
+        if let target, let position = order.firstIndex(of: target) {
+            index = position
+        } else {
+            // В конец раздела: после его последней задачи, иначе — перед первым следующим разделом
+            let rest = sectionOrder.drop { $0 != section }.dropFirst()
+            let next = all.first { row in rest.contains(row.task.sectionId) && !moved.contains(row.id) }?.id
+            index = next.flatMap { order.firstIndex(of: $0) } ?? order.count
+        }
+        order.insert(contentsOf: moved, at: index)
+        errors.run { try database.arrange(list: listId, order: order, moved: moved, section: section) }
+        return true
     }
 }
 
