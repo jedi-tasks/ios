@@ -6,6 +6,7 @@ struct SettingsScreen: View {
     @State private var board = Board()
     @State private var errors = ErrorAlert()
     @State private var importing = false
+    @AppStorage("dailyCapacityMinutes") private var capacity = 360
     @State private var importResult: ImportResult?
 
     var body: some View {
@@ -46,6 +47,13 @@ struct SettingsScreen: View {
                 Text("Приоритеты")
             } footer: {
                 Text("Сверху — важнее. Знаки (например «!!!») показываются перед названием задачи. Задачи удалённого уровня становятся «не разобрано».")
+            }
+            Section {
+                Stepper(value: $capacity, in: 60...(16 * 60), step: 30) {
+                    LabeledContent("Лимит на день", value: Workload.format(capacity))
+                }
+            } footer: {
+                Text("С ним сравнивается загрузка дней в «В планах»: сумма оценок задач дня.")
             }
             Section {
                 Button {

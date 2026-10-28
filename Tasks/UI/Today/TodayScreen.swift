@@ -12,8 +12,13 @@ struct TodayScreen: View {
         let today = DayKey.today
         let rows = board.today(today, mode: mode)
         List {
+            // Сколько времени займёт день
+            let load = Workload(rows)
+            if !load.summary.isEmpty {
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).listRowSeparator(.hidden)
+            }
             ForEach(rows) { row in
-                NavigationLink(value: row.id) {
+                TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, hidesTodayDate: true, board: board)
                 }
                 .listRowSeparator(.hidden)
@@ -37,6 +42,7 @@ struct TodayScreen: View {
             ToolbarItem { SortMenu(mode: $mode, allowsManual: false) }
             ToolbarItem { Button("Добавить", systemImage: "plus") { adding = true } }
         }
+        .taskSelection(board: board)
         .observingBoard($board, in: database)
         .errorAlert(errors)
     }

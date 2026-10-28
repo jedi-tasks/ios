@@ -220,6 +220,7 @@ struct AppDatabase: Sendable {
         try db.execute(sql: "UPDATE blocker SET deletedAt = ?, updatedAt = ? WHERE (taskId = ? OR blockingTaskId = ?) AND deletedAt IS NULL",
                        arguments: [now, now, id, id])
         try db.execute(sql: "UPDATE taskTag SET deletedAt = ?, updatedAt = ? WHERE taskId = ? AND deletedAt IS NULL", arguments: [now, now, id])
+        try pruneTags(db, now: now)
     }
 
     private static func replaceTags(_ db: Database, task: UUID, names: [String], now: Date) throws {
@@ -238,6 +239,17 @@ struct AppDatabase: Sendable {
         for tagId in Set(tagIds) {
             try TaskTag(taskId: task, tagId: tagId, updatedAt: now).save(db)
         }
+        try pruneTags(db, now: now)
+    }
+
+    /// Теги, не висящие ни на одной живой задаче, удаляются — теги существуют только через задачи.
+    static func pruneTags(_ db: Database, now: Date) throws {
+        try db.execute(sql: """
+            UPDATE tag SET deletedAt = ?, updatedAt = ?
+            WHERE deletedAt IS NULL AND id NOT IN (
+                SELECT tt.tagId FROM taskTag tt JOIN taskItem t ON t.id = tt.taskId
+                WHERE tt.deletedAt IS NULL AND t.deletedAt IS NULL)
+            """, arguments: [now, now])
     }
 
     /// Что можно назначить задаче броском на объект (список, приоритет, тег…) или из меню.
@@ -516,6 +528,11 @@ struct AppDatabase: Sendable {
         migrator.registerMigration("v4-icons") { db in
             try db.alter(table: "taskList") { t in t.add(column: "icon", .text).notNull().defaults(to: TaskList.icons[0]) }
             try db.execute(sql: "UPDATE taskList SET icon = 'tray.fill' WHERE isInbox = 1")
+        }
+
+        migrator.registerMigration("v5-prune-tags") { db in
+            // Уборка тегов, набежавших от сохранения на каждую букву
+            try pruneTags(db, now: Date())
         }
 
         return migrator

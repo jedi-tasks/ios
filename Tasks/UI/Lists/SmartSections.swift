@@ -33,13 +33,11 @@ struct SmartSections: View {
     }
 
     private func chips(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        Section(title) {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.headline).foregroundStyle(.secondary)
             FlowLayout(spacing: 8) { content() }
-                .padding(.vertical, 4)
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
         }
+        .padding(.top, 16)
     }
 
     private func chip(_ filter: TaskFilter, drop: AppDatabase.Assignment, label: () -> Text) -> some View {
@@ -81,7 +79,7 @@ private struct Chip: View {
 
     private var background: Color {
         if targeted || isSelected { return Color.accentColor.opacity(0.35) }
-        return Color(.tertiarySystemFill)
+        return Color(.secondarySystemGroupedBackground)
     }
 }
 
@@ -128,29 +126,6 @@ struct FlowLayout: Layout {
     }
 }
 
-/// Цель для перетаскивания задачи: брошенная задача получает значение объекта.
-private struct TaskDropTarget: ViewModifier {
-    let assignment: AppDatabase.Assignment
-    @Environment(\.database) private var database
-    @State private var targeted = false
-
-    func body(content: Content) -> some View {
-        content
-            .dropDestination(for: String.self) { items, _ in
-                let ids = items.compactMap(UUID.init(uuidString:))
-                for id in ids { try? database.assign(assignment, to: id) }
-                return !ids.isEmpty
-            } isTargeted: { targeted = $0 }
-            .listRowBackground(targeted ? Color.accentColor.opacity(0.2) : nil)
-    }
-}
-
-extension View {
-    func taskDrop(_ assignment: AppDatabase.Assignment) -> some View {
-        modifier(TaskDropTarget(assignment: assignment))
-    }
-}
-
 /// Задачи подборки: приоритета, корзины длительности или тега.
 struct FilteredScreen: View {
     let filter: TaskFilter
@@ -161,7 +136,7 @@ struct FilteredScreen: View {
         let rows = board.rows(matching: filter)
         List {
             ForEach(rows) { row in
-                NavigationLink(value: row.id) {
+                TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
                 }
                 .listRowSeparator(.hidden)
@@ -171,6 +146,7 @@ struct FilteredScreen: View {
         .overlay { if rows.isEmpty { ContentUnavailableView("Нет задач", systemImage: "tray") } }
         .navigationTitle(board.title(of: filter))
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
+        .taskSelection(board: board)
         .observingBoard($board, in: database)
     }
 }

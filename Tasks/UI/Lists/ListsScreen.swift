@@ -1,50 +1,30 @@
 import SwiftUI
 
-/// Все списки: Inbox сверху, свои — в произвольном порядке, у каждого свой цвет.
+/// Все списки (iPhone): Inbox, мои списки, подборки. Устроено как боковая панель на iPad.
 struct ListsScreen: View {
     @Environment(\.database) private var database
     @State private var board = Board()
     @State private var editing: TaskList?
-    @State private var openedFilter: TaskFilter?
-    @State private var errors = ErrorAlert()
+    @State private var opened: SidebarItem?
 
     var body: some View {
-        List {
-            if let inbox = board.inbox {
-                NavigationLink(value: inbox.id) { ListRowLabel(list: inbox, count: board.rows(in: inbox.id, done: false).count) }
-                    .taskDrop(.list(inbox.id))
-            }
-            Section(board.userLists.isEmpty ? "" : "Списки") {
-                ForEach(board.userLists) { list in
-                    NavigationLink(value: list.id) { ListRowLabel(list: list, count: board.rows(in: list.id, done: false).count) }
-                        .taskDrop(.list(list.id))
-                        .swipeActions(edge: .leading) {
-                            Button("Изменить", systemImage: "pencil") { editing = list }.tint(Color(hex: list.colorHex))
-                        }
-                }
-                .onMove { from, to in
-                    var ids = board.userLists.map(\.id)
-                    ids.move(fromOffsets: from, toOffset: to)
-                    errors.run { try database.reorder(table: "taskList", ids: ids) }
-                }
-                .onDelete { offsets in
-                    errors.run { for index in offsets { try database.deleteList(board.userLists[index].id) } }
+        ListsPanel(board: board, onOpen: { opened = $0 }, onEdit: { editing = $0 })
+            .navigationTitle("Списки")
+            .navigationDestination(item: $opened) { item in
+                switch item {
+                case .list(let id): ListScreen(listId: id)
+                case .filter(let filter): FilteredScreen(filter: filter)
+                case .today: TodayScreen()
+                case .planned: PlannedScreen()
+                case .settings: SettingsScreen()
                 }
             }
-            SmartSections(board: board) { openedFilter = $0 }
-        }
-        .navigationTitle("Списки")
-        .navigationDestination(for: UUID.self) { ListScreen(listId: $0) }
-        .navigationDestination(item: $openedFilter) { FilteredScreen(filter: $0) }
-        .toolbar {
-            ToolbarItem { EditButton() }
-            ToolbarItem { Button("Новый список", systemImage: "plus") { editing = TaskList(name: "") } }
-        }
-        .sheet(item: $editing) { ListEditSheet(list: $0) }
-        .observingBoard($board, in: database)
-        .errorAlert(errors)
+            .toolbar {
+                ToolbarItem { Button("Новый список", systemImage: "plus") { editing = TaskList(name: "") } }
+            }
+            .sheet(item: $editing) { ListEditSheet(list: $0) }
+            .observingBoard($board, in: database)
     }
-
 }
 
 /// Иконка списка в цветном кружке, как в Напоминаниях.

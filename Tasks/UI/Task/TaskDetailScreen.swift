@@ -28,6 +28,10 @@ struct TaskDetailScreen: View {
             draft = row.task
             tagsText = row.tags.map(\.name).joined(separator: ", ")
         }
+        .onDisappear {
+            // Недописанный последний тег сохраняется при уходе с карточки
+            if draft != nil, Self.parseTags(tagsText) != board.row(taskId)?.tags.map(\.name) { save(tags: true) }
+        }
         .errorAlert(errors)
     }
 
@@ -97,7 +101,10 @@ struct TaskDetailScreen: View {
                 TextField("через запятую", text: $tagsText)
                     .textInputAutocapitalization(.never)
                     .onSubmit { save(tags: true) }
-                    .onChange(of: tagsText) { save(tags: true) }
+                    // Сохраняем только дописанные теги — иначе каждая набранная буква станет тегом
+                    .onChange(of: tagsText) {
+                        if tagsText.trimmingCharacters(in: .whitespaces).hasSuffix(",") { save(tags: true) }
+                    }
                 let suggestions = tagSuggestions
                 if !suggestions.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {

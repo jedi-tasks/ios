@@ -242,3 +242,40 @@ struct ArrangeTests {
         #expect(board.row(c.id)?.task.sectionId == section.id)
     }
 }
+
+struct TagPruneTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func unusedTagsDisappear() throws {
+        let task = try db.addTask(title: "A", listId: nil)
+        try db.saveTask(task, tags: ["Д"])
+        try db.saveTask(task, tags: ["Для души"])
+        #expect(try db.board().tags.map(\.name) == ["Для души"])
+        try db.deleteTask(task.id)
+        #expect(try db.board().tags.isEmpty)
+    }
+}
+
+struct WorkloadTests {
+    private let db = try! AppDatabase.makeInMemory()
+
+    @Test func sumsEstimatesAndCountsUnestimated() throws {
+        var a = try db.addTask(title: "A", listId: nil, plannedDay: "2026-10-29")
+        a.durationMinutes = 45
+        try db.saveTask(a)
+        var b = try db.addTask(title: "B", listId: nil, plannedDay: "2026-10-29")
+        b.durationMinutes = 90
+        try db.saveTask(b)
+        try db.addTask(title: "C", listId: nil, plannedDay: "2026-10-29")
+        try db.addTask(title: "Old", listId: nil, plannedDay: "2026-10-20")
+
+        let board = try db.board()
+        let days = board.planDays(from: "2026-10-28", days: 3)
+        #expect(days.map(\.day) == ["2026-10-28", "2026-10-29", "2026-10-30"])
+        #expect(days[0].rows.isEmpty)
+        let load = Workload(days[1].rows)
+        #expect(load.minutes == 135 && load.unestimated == 1)
+        #expect(load.summary == "≈ 2 ч 15 мин · 1 без оценки")
+        #expect(board.overdue("2026-10-28").map(\.task.title) == ["Old"])
+    }
+}

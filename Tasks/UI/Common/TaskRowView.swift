@@ -6,19 +6,30 @@ struct TaskRowView: View {
     var showList: String?
     /// В «Сегодня» планируемый срок на сегодня очевиден — не показываем.
     var hidesTodayDate = false
+    /// В плане по дням день задачи и так виден в заголовке.
+    var hidesPlannedDay = false
     /// Для меню «назначить»: списки, приоритеты, теги.
     var board: Board?
     @Environment(\.database) private var database
+    @Environment(\.taskSelection) private var selection
     @State private var errors = ErrorAlert()
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            Button {
-                errors.run { try database.setCompleted(row.id, !row.isDone) }
-            } label: {
-                CheckCircle(done: row.isDone)
+            // Тот же кружок в режиме выбора отмечает задачу
+            if let selection, selection.isSelecting {
+                Button { selection.toggle(row.id) } label: {
+                    CheckCircle(done: selection.selected.contains(row.id), selectedStyle: true)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    errors.run { try database.setCompleted(row.id, !row.isDone) }
+                } label: {
+                    CheckCircle(done: row.isDone)
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 3) {
                 // Приоритет — отдельно, знаками перед названием, как в Напоминаниях
@@ -28,44 +39,10 @@ struct TaskRowView: View {
             }
         }
         .opacity(row.isBlocked && !row.isDone ? 0.5 : 1)
-        // Бросить на список, приоритет, тег или длительность — задача примет значение
+        // Бросить на список, приоритет, тег, длительность или день — задача примет значение.
+        // Без contextMenu: оно перехватывает долгое нажатие, и перетаскивание не начинается.
         .draggable(row.id.uuidString) { Text(row.task.title).padding(8).background(.regularMaterial, in: Capsule()) }
-        .contextMenu { if let board { assignMenu(board) } }
         .errorAlert(errors)
-    }
-
-    /// То же, что перетаскивание, но из меню — для iPhone.
-    @ViewBuilder
-    private func assignMenu(_ board: Board) -> some View {
-        Button("На сегодня", systemImage: "sun.max") { assign(.plannedDay(DayKey.today)) }
-        Menu("Список", systemImage: "list.bullet") {
-            ForEach(board.lists) { list in
-                Button(list.name) { assign(.list(list.id)) }
-            }
-        }
-        Menu("Приоритет", systemImage: "exclamationmark") {
-            ForEach(board.priorities) { priority in
-                Button("\(priority.marks) \(priority.name)") { assign(.priority(priority.id)) }
-            }
-            Button("Не разобрано") { assign(.priority(nil)) }
-        }
-        Menu("Длительность", systemImage: "clock") {
-            ForEach(DurationBucket.allCases, id: \.self) { bucket in
-                Button(Self.duration(bucket.minutes)) { assign(.duration(bucket.minutes)) }
-            }
-            Button("Без оценки") { assign(.duration(nil)) }
-        }
-        if !board.tags.isEmpty {
-            Menu("Добавить тег", systemImage: "number") {
-                ForEach(board.tags.filter { tag in !row.tags.contains { $0.id == tag.id } }) { tag in
-                    Button(tag.name) { assign(.tag(tag.id)) }
-                }
-            }
-        }
-    }
-
-    private func assign(_ assignment: AppDatabase.Assignment) {
-        errors.run { try database.assign(assignment, to: row.id) }
     }
 
     private var priorityMarks: Text {
@@ -95,7 +72,7 @@ struct TaskRowView: View {
         var items: [Meta] = []
         let blockers = row.blockers.filter(\.isActive)
         if !blockers.isEmpty { items.append(Meta(text: "\(blockers.count)", icon: "lock", color: .orange)) }
-        if let day = row.task.plannedDay, !(hidesTodayDate && day == today) {
+        if let day = row.task.plannedDay, !hidesPlannedDay, !(hidesTodayDate && day == today) {
             items.append(Meta(text: DayKey.short(day), icon: "calendar", color: day < today ? .red : .secondary))
         }
         if let day = row.task.deadlineDay {
@@ -106,18 +83,18 @@ struct TaskRowView: View {
         return items
     }
 
-    static func duration(_ minutes: Int) -> String {
-        minutes < 60 ? "\(minutes) мин" : (minutes % 60 == 0 ? "\(minutes / 60) ч" : "\(minutes / 60) ч \(minutes % 60) мин")
-    }
+    static func duration(_ minutes: Int) -> String { Workload.format(minutes) }
 }
 
 /// Чекбокс задачи: всегда серый и тонкий, как в Напоминаниях.
 struct CheckCircle: View {
     var done = false
+    /// В режиме выбора отметка — цветом выделения, а не серая.
+    var selectedStyle = false
 
     var body: some View {
         Image(systemName: done ? "checkmark.circle.fill" : "circle")
             .font(.title3.weight(.ultraLight))
-            .foregroundStyle(.gray)
+            .foregroundStyle(done && selectedStyle ? Color.accentColor : .gray)
     }
 }

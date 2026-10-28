@@ -25,6 +25,10 @@ struct ListScreen: View {
         let mode = list?.sortMode ?? .manual
         let open = TaskOrdering.sorted(board.rows(in: listId, done: false), by: mode)
         List {
+            let load = Workload(open)
+            if !load.summary.isEmpty {
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).listRowSeparator(.hidden)
+            }
             group(open.filter { $0.task.sectionId == nil }, section: nil, all: open)
             newRow(NewTaskTarget(), list: list)
             ForEach(board.sections(of: listId)) { section in
@@ -87,6 +91,7 @@ struct ListScreen: View {
         }
         .sheet(isPresented: $editingSections) { SectionsSheet(listId: listId) }
         .tint(list.map { Color(hex: $0.colorHex) })
+        .taskSelection(board: board)
         .observingBoard($board, in: database)
         .errorAlert(errors)
     }
@@ -112,20 +117,25 @@ struct ListScreen: View {
     @ViewBuilder
     private func group(_ rows: [TaskRow], section: UUID?, all: [TaskRow], movable: Bool = true) -> some View {
         ForEach(rows) { row in
-            NavigationLink(value: row.id) { TaskRowView(row: row, board: board) }
+            TaskLink(id: row.id) { TaskRowView(row: row, board: board) }
                 .listRowSeparator(.hidden)
-                .dropDestination(for: String.self) { items, _ in
-                    movable && place(items, before: row.id, section: section, all: all)
+                // Свайп, а не onDelete: иначе в режиме выбора рядом с отметками встают кнопки удаления
+                .swipeActions {
+                    Button("Удалить", systemImage: "trash", role: .destructive) {
+                        errors.run { try database.deleteTask(row.id) }
+                    }
                 }
         }
-        .onDelete { offsets in
-            errors.run { for index in offsets { try database.deleteTask(rows[index].id) } }
+        // Вставка между строками — штатный механизм List; бросок на строку внутри List не доходит
+        .dropDestination(for: String.self) { items, index in
+            guard movable else { return }
+            _ = place(items, before: index < rows.count ? rows[index].id : nil, section: section, all: all)
         }
     }
 
     /// Переставляет брошенные задачи перед `target` (или в конец раздела) в видимом порядке списка.
     private func place(_ items: [String], before target: UUID?, section: UUID?, all: [TaskRow]) -> Bool {
-        let moved = items.compactMap(UUID.init(uuidString:)).filter { $0 != target }
+        let moved = items.compactMap(DragPayload.taskId).filter { $0 != target }
         guard !moved.isEmpty else { return false }
         // Видимый порядок: без раздела, затем разделы по порядку
         let sectionOrder = [nil] + board.sections(of: listId).map { Optional($0.id) }
