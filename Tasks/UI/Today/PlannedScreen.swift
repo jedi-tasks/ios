@@ -46,6 +46,7 @@ struct PlannedScreen: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
         }
+        .collapsesTaskOnOutsideTap()
         .background(Color(.systemGroupedBackground))
         .navigationTitle("В планах")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }

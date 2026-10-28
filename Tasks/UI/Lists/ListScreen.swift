@@ -24,20 +24,17 @@ struct ListScreen: View {
         let list = board.list(listId)
         let mode = list?.sortMode ?? .manual
         let open = TaskOrdering.sorted(board.rows(in: listId, done: false), by: mode)
-        List {
+        TaskScroll {
             let load = Workload(open)
             if !load.summary.isEmpty {
-                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).listRowSeparator(.hidden)
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
             }
             group(open.filter { $0.task.sectionId == nil }, section: nil, all: open)
             newRow(NewTaskTarget(), list: list)
             ForEach(board.sections(of: listId)) { section in
                 let rows = open.filter { $0.task.sectionId == section.id }
                 let collapsed = collapsedIds.contains(section.id.uuidString)
-                Section {
-                    if !collapsed { group(rows, section: section.id, all: open) }
-                    newRow(NewTaskTarget(sectionId: section.id), list: list)
-                } header: {
+                VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Button {
                             withAnimation { toggle(section.id) }
@@ -57,19 +54,22 @@ struct ListScreen: View {
                         Button("Добавить", systemImage: "plus") { add(NewTaskTarget(sectionId: section.id)) }
                             .labelStyle(.iconOnly)
                     }
+                    .padding(.top, 18)
+                    .padding(.bottom, 6)
                     // Бросок на заголовок — в конец раздела
                     .dropDestination(for: String.self) { items, _ in
                         place(items, before: nil, section: section.id, all: open)
                     }
+                    if !collapsed { group(rows, section: section.id, all: open) }
+                    newRow(NewTaskTarget(sectionId: section.id), list: list)
                 }
             }
             if showDone {
                 let done = board.rows(in: listId, done: true).sorted { ($0.task.completedAt ?? .distantPast) > ($1.task.completedAt ?? .distantPast) }
-                Section("Выполненные") { group(done, section: nil, all: [], movable: false) }
+                Text("Выполненные").font(.title3.bold()).padding(.top, 18).padding(.bottom, 6)
+                group(done, section: nil, all: [], movable: false)
             }
         }
-        // Строки на всю ширину с разделителями, как в Напоминаниях
-        .listStyle(.plain)
         .navigationTitle(list?.name ?? "")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
         .toolbar {
@@ -118,18 +118,11 @@ struct ListScreen: View {
     private func group(_ rows: [TaskRow], section: UUID?, all: [TaskRow], movable: Bool = true) -> some View {
         ForEach(rows) { row in
             TaskLink(id: row.id) { TaskRowView(row: row, board: board) }
-                .listRowSeparator(.hidden)
-                // Свайп, а не onDelete: иначе в режиме выбора рядом с отметками встают кнопки удаления
-                .swipeActions {
-                    Button("Удалить", systemImage: "trash", role: .destructive) {
-                        errors.run { try database.deleteTask(row.id) }
-                    }
+                .padding(.vertical, 6)
+                // Бросок на задачу — встать перед ней (и в её раздел)
+                .dropDestination(for: String.self) { items, _ in
+                    movable && place(items, before: row.id, section: section, all: all)
                 }
-        }
-        // Вставка между строками — штатный механизм List; бросок на строку внутри List не доходит
-        .dropDestination(for: String.self) { items, index in
-            guard movable else { return }
-            _ = place(items, before: index < rows.count ? rows[index].id : nil, section: section, all: all)
         }
     }
 

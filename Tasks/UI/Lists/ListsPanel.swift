@@ -127,25 +127,19 @@ private struct ListPanelRow: View {
     @State private var targeted = false
 
     var body: some View {
-        // Меню — отдельной кнопкой «…», а не contextMenu: иначе долгое нажатие не даёт перетащить список
-        HStack(spacing: 4) {
-            Button(action: onOpen) {
-                ListRowLabel(list: list, count: count).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if onEdit != nil || onDelete != nil {
-                Menu {
-                    if let onEdit { Button("Изменить", systemImage: "pencil", action: onEdit) }
-                    if let onDelete { Button("Удалить", systemImage: "trash", role: .destructive, action: onDelete) }
-                } label: {
-                    Image(systemName: "ellipsis").foregroundStyle(.secondary).frame(width: 28, height: 28).contentShape(Rectangle())
+        ListRowLabel(list: list, count: count)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay {
+                if onDropLists != nil {
+                    // Тап — открыть; долгое нажатие — меню; повёл пальцем — перетаскивание списка
+                    MenuDragInteraction(payload: { DragPayload.list(list.id) }, title: list.name, colorHex: list.colorHex,
+                                        actions: menuActions, onTap: onOpen)
+                } else {
+                    Color.clear.contentShape(Rectangle()).onTapGesture(perform: onOpen)
                 }
             }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .modifier(ListDragSource(listId: onDropLists == nil ? nil : list.id))
         .dropDestination(for: String.self) { items, _ in
             let lists = items.compactMap(DragPayload.listId)
             if !lists.isEmpty, let onDropLists {
@@ -159,22 +153,19 @@ private struct ListPanelRow: View {
     }
 
     /// Обычный перечень: фон только у выбранного списка и под перетаскиваемой задачей.
+    private var menuActions: [UIAction] {
+        var actions: [UIAction] = []
+        if let onEdit { actions.append(UIAction(title: "Изменить", image: UIImage(systemName: "pencil")) { _ in onEdit() }) }
+        if let onDelete {
+            actions.append(UIAction(title: "Удалить", image: UIImage(systemName: "trash"), attributes: .destructive) { _ in onDelete() })
+        }
+        return actions
+    }
+
     private var background: Color {
         if targeted { return Color.accentColor.opacity(0.25) }
         if isSelected { return Color(hex: list.colorHex).opacity(0.2) }
         return .clear
-    }
-}
-
-private struct ListDragSource: ViewModifier {
-    let listId: UUID?
-
-    func body(content: Content) -> some View {
-        if let listId {
-            content.draggable(DragPayload.list(listId))
-        } else {
-            content
-        }
     }
 }
 

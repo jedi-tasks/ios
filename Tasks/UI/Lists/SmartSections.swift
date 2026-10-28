@@ -134,15 +134,14 @@ struct FilteredScreen: View {
 
     var body: some View {
         let rows = board.rows(matching: filter)
-        List {
+        TaskScroll {
             ForEach(rows) { row in
                 TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
                 }
-                .listRowSeparator(.hidden)
+                .padding(.vertical, 6)
             }
         }
-        .listStyle(.plain)
         .overlay { if rows.isEmpty { ContentUnavailableView("Нет задач", systemImage: "tray") } }
         .navigationTitle(board.title(of: filter))
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }

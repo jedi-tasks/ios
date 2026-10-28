@@ -10,11 +10,18 @@ struct SidebarRoot: View {
     @State private var query = ""
     @State private var errors = ErrorAlert()
 
+    /// На Mac над панелью только кнопки — как у Напоминаний.
+    #if targetEnvironment(macCatalyst)
+    private static let sidebarTitle = ""
+    #else
+    private static let sidebarTitle = "Задачи"
+    #endif
+
     var body: some View {
         NavigationSplitView {
             ListsPanel(board: board, selection: selection, showsTiles: true,
                        onOpen: { query = ""; selection = $0 }, onEdit: { editing = $0 })
-            .navigationTitle("Задачи")
+            .navigationTitle(Self.sidebarTitle)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Новый список", systemImage: "text.badge.plus") { editing = TaskList(name: "") }
@@ -55,15 +62,14 @@ struct SearchScreen: View {
 
     var body: some View {
         let rows = board.search(query)
-        List {
+        TaskScroll {
             ForEach(rows) { row in
                 TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
                 }
-                .listRowSeparator(.hidden)
+                .padding(.vertical, 6)
             }
         }
-        .listStyle(.plain)
         .overlay { if rows.isEmpty { ContentUnavailableView.search(text: query) } }
         .navigationTitle("Поиск")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
@@ -72,14 +78,15 @@ struct SearchScreen: View {
     }
 }
 
-/// На Mac — единая шапка без названия окна, как у Напоминаний.
+/// На Mac — шапка без отдельной полосы заголовка, как у Напоминаний.
 private struct UnifiedTitlebar: ViewModifier {
     func body(content: Content) -> some View {
         #if targetEnvironment(macCatalyst)
         content.onAppear {
+            // Без полосы заголовка: содержимое уходит под кнопки окна, и они встают в строку с левым разделом
             for case let scene as UIWindowScene in UIApplication.shared.connectedScenes {
                 scene.titlebar?.titleVisibility = .hidden
-                scene.titlebar?.toolbarStyle = .unified
+                scene.titlebar?.toolbar = nil
             }
         }
         #else

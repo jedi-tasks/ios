@@ -11,17 +11,17 @@ struct TodayScreen: View {
     var body: some View {
         let today = DayKey.today
         let rows = board.today(today, mode: mode)
-        List {
+        TaskScroll {
             // Сколько времени займёт день
             let load = Workload(rows)
             if !load.summary.isEmpty {
-                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).listRowSeparator(.hidden)
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
             }
             ForEach(rows) { row in
                 TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, hidesTodayDate: true, board: board)
                 }
-                .listRowSeparator(.hidden)
+                .padding(.vertical, 6)
             }
             // Новая задача из «Сегодня» — в Inbox со сроком на сегодня
             if adding {
@@ -32,7 +32,6 @@ struct TodayScreen: View {
                 }
             }
         }
-        .listStyle(.plain)
         .overlay {
             if rows.isEmpty && !adding { ContentUnavailableView("На сегодня всё", systemImage: "checkmark.seal") }
         }

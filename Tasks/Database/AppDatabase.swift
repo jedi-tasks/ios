@@ -294,6 +294,7 @@ struct AppDatabase: Sendable {
         case duration(Int?)
         case tag(UUID)
         case plannedDay(String?)
+        case deadlineDay(String?)
     }
 
     func assign(_ assignment: Assignment, to taskId: UUID) throws {
@@ -314,6 +315,7 @@ struct AppDatabase: Sendable {
         case .priority(let id): task.priorityId = id
         case .duration(let minutes): task.durationMinutes = minutes
         case .plannedDay(let day): task.plannedDay = day
+        case .deadlineDay(let day): task.deadlineDay = day
         case .tag: break
         }
         try saveTask(task)

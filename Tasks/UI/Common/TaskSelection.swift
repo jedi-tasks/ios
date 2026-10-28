@@ -7,6 +7,8 @@ import SwiftUI
 final class TaskSelectionState {
     var isSelecting = false
     var selected: Set<UUID> = []
+    /// Задача, под которой раскрыта панель быстрых действий.
+    var expanded: UUID?
 
     func toggle(_ id: UUID) {
         if selected.remove(id) == nil { selected.insert(id) }
@@ -15,14 +17,17 @@ final class TaskSelectionState {
 
 extension EnvironmentValues {
     @Entry var taskSelection: TaskSelectionState? = nil
+    /// Снимок данных экрана — для панели быстрых действий.
+    @Entry var taskBoard: Board? = nil
 }
 
-/// Строка задачи: в обычном режиме открывает карточку, в режиме выбора — отмечает задачу.
+/// Строка задачи: тап раскрывает под ней быстрые действия (как в Напоминаниях), в режиме выбора — отмечает задачу.
 /// Строку можно перетащить на список, плашку или день — задача (или все отмеченные) примет значение.
 struct TaskLink<Content: View>: View {
     let id: UUID
     @ViewBuilder let content: Content
     @Environment(\.taskSelection) private var selection
+    @Environment(\.taskBoard) private var board
 
     var body: some View {
         // Под пальцем/курсором — значок, а не вся строка, как в Напоминаниях
@@ -40,11 +45,54 @@ struct TaskLink<Content: View>: View {
     @ViewBuilder private var link: some View {
         if let selection, selection.isSelecting {
             // Отметку рисует кружок самой строки; тап по любому месту строки — тоже отметка
-            Button { selection.toggle(id) } label: { content.contentShape(Rectangle()) }
+            Button { selection.toggle(id) } label: { content.frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle()) }
                 .buttonStyle(.plain)
+        } else if let selection, let board, let row = board.row(id) {
+            let expanded = selection.expanded == id
+            if expanded {
+                ExpandedTaskRow(row: row, board: board) { selection.expanded = nil }
+            } else {
+                // Жест, а не кнопка: без подсветки нажатия — как тап в текстовое поле
+                content
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { selection.expanded = id }
+            }
         } else {
             NavigationLink(value: id) { content }
         }
+    }
+}
+
+/// Лента задач на обычной прокрутке, а не на `List`: внутри системного списка не срабатывали
+/// тап с раскрытием быстрых действий и бросок задачи на задачу.
+struct TaskScroll<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) { content }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 80)
+        }
+        .collapsesTaskOnOutsideTap()
+    }
+}
+
+extension View {
+    /// Тап мимо задач закрывает раскрытую задачу. Тапы по строкам и их кнопкам перехватываются ими самими.
+    func collapsesTaskOnOutsideTap() -> some View {
+        modifier(CollapseOnOutsideTap())
+    }
+}
+
+private struct CollapseOnOutsideTap: ViewModifier {
+    @Environment(\.taskSelection) private var selection
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .onTapGesture { if selection?.expanded != nil { selection?.expanded = nil } }
     }
 }
 
@@ -83,6 +131,7 @@ private struct TaskSelection: ViewModifier {
     func body(content: Content) -> some View {
         content
             .environment(\.taskSelection, state)
+            .environment(\.taskBoard, board)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(state.isSelecting ? "Готово" : "Выбрать") {
