@@ -138,6 +138,9 @@ struct DeveloperToolsScreen: View {
                     Button("Синхронизировать") { Task { await sync.run(); reload() } }
                     Button("Полный синк с нуля") { Task { await sync.fullSync(); reload() } }
                 }
+                Section {
+                    NavigationLink("Журнал запросов") { APILogScreen() }
+                }
                 Section("Очередь: \(queue.count)") {
                     ForEach(queue) { row in
                         VStack(alignment: .leading) {

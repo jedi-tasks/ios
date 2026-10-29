@@ -88,30 +88,48 @@ actor APIClient {
         return response
     }
 
+    /// Выполняет запрос и пишет его в журнал вместе с ответом или ошибкой.
+    private func logged<Req: Message, Res: HasErrorField & Message>(
+        _ name: String, _ request: Req, _ perform: () async throws -> Res
+    ) async throws -> Res {
+        let started = ContinuousClock.now
+        let sent = request
+        do {
+            let response = try await perform()
+            APILog.record(name, request: request, started: started, response: response,
+                          error: response.hasError ? "\(response.error.category): \(response.error.message) \(response.error.systemMessage)" : nil)
+            return response
+        } catch {
+            APILog.record(name, request: request, started: started, response: Res?.none, error: String(describing: error))
+            throw error
+        }
+    }
+
     /// Без авторизации.
-    private func call<Res: HasErrorField>(_ name: String, _ perform: (GRPCClient<HTTP2ClientTransport.Posix>) async throws -> Res) async throws -> Res {
-        logger.debug("→ \(name, privacy: .public)")
-        let response = try await perform(try grpc())
-        if response.hasError { logger.warning("✗ \(name, privacy: .public): \(response.error.message, privacy: .public)") }
-        return try unwrap(response)
+    private func call<Req: Message, Res: HasErrorField & Message>(
+        _ name: String, _ request: Req, _ perform: (GRPCClient<HTTP2ClientTransport.Posix>, Req) async throws -> Res
+    ) async throws -> Res {
+        let client = try grpc()
+        return try unwrap(try await logged(name, request) { try await perform(client, request) })
     }
 
     /// С авторизацией: подставляет токен, при `NeedToRefreshToken` обновляет его и повторяет один раз.
-    private func authed<Req: HasAccessToken & Sendable, Res: HasErrorField>(
+    private func authed<Req: HasAccessToken & Message, Res: HasErrorField & Message>(
         _ name: String, _ request: Req,
         _ perform: (GRPCClient<HTTP2ClientTransport.Posix>, Req) async throws -> Res
     ) async throws -> Res {
         var request = request
         request.accessToken = try await validAccessToken()
-        logger.debug("→ \(name, privacy: .public)")
-        var response = try await perform(try grpc(), request)
+        let client = try grpc()
+        let sent = request
+        var response = try await logged(name, sent) { try await perform(client, sent) }
         if response.hasError, APIError(response.error).category == .needToRefreshToken {
             request.accessToken = try await refreshTokens()
-            response = try await perform(try grpc(), request)
+            let retried = request
+            response = try await logged(name, retried) { try await perform(try grpc(), retried) }
         }
         if response.hasError {
             let error = APIError(response.error)
-            logger.warning("✗ \(name, privacy: .public): \(error.message, privacy: .public) \(error.systemMessage, privacy: .public)")
             if error.category == .needToLogout { onLogout?() }
             throw error
         }
@@ -149,7 +167,9 @@ actor APIClient {
             request.application = Self.application
             request.device = await Self.device()
             let client = try grpc()
-            let response = try await Auth_AuthEndpoint.Client(wrapping: client).refreshTokens(request)
+            let response = try await logged("RefreshTokens", request) {
+                try await Auth_AuthEndpoint.Client(wrapping: client).refreshTokens(request)
+            }
             if response.hasError {
                 let error = APIError(response.error)
                 if error.category == .needToLogout { onLogout?() }
@@ -194,7 +214,7 @@ actor APIClient {
         request.application = Self.application
         request.device = await Self.device()
         request.deviceID = TokenStore.deviceID
-        let response = try await call("SignIn") { try await Auth_AuthEndpoint.Client(wrapping: $0).signIn(request) }
+        let response = try await call("SignIn", request) { try await Auth_AuthEndpoint.Client(wrapping: $0).signIn($1) }
         TokenStore.accessToken = response.token.accessToken
         TokenStore.refreshToken = response.token.refreshToken
         TokenStore.email = email
@@ -233,8 +253,19 @@ actor APIClient {
         var request = Sync_SubscribeToSyncRequest()
         request.accessToken = try await validAccessToken()
         let client = Sync_SyncEndpoint.Client(wrapping: try grpc())
-        try await client.subscribeToSync(request) { response in
-            for try await _ in response.messages { await onChange() }
+        let started = ContinuousClock.now
+        let sent = request
+        do {
+            try await client.subscribeToSync(request) { response in
+                for try await message in response.messages {
+                    APILog.record("SubscribeToSync ↓", request: sent, started: started, response: message, error: nil)
+                    await onChange()
+                }
+            }
+            APILog.record("SubscribeToSync", request: request, started: started, response: Sync_SubscribeToSyncRequest?.none, error: "стрим закрыт")
+        } catch {
+            APILog.record("SubscribeToSync", request: request, started: started, response: Sync_SubscribeToSyncRequest?.none, error: String(describing: error))
+            throw error
         }
     }
 
@@ -409,6 +440,7 @@ extension Blocker_DeleteBlockerRequest: HasAccessToken {}
 extension Settings_UpdateSettingsRequest: HasAccessToken {}
 
 extension Auth_SignInResponse: HasErrorField {}
+extension Auth_RefreshTokensResponse: HasErrorField {}
 extension Auth_SignOutResponse: HasErrorField {}
 extension User_UpdateUserResponse: HasErrorField {}
 extension Sync_SyncResponse: HasErrorField {}
