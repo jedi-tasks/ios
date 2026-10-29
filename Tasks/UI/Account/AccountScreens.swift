@@ -101,7 +101,6 @@ struct DeveloperToolsScreen: View {
     @State private var host = ServerEndpoint.current.host
     @State private var port = String(ServerEndpoint.current.port)
     @State private var tls = ServerEndpoint.current.tls
-    @State private var queue: [QueuedMutation] = []
     @State private var checkpoint: UInt32 = 0
 
     var body: some View {
@@ -139,17 +138,8 @@ struct DeveloperToolsScreen: View {
                     Button("Полный синк с нуля") { Task { await sync.fullSync(); reload() } }
                 }
                 Section {
+                    NavigationLink("Синк-задачи: \(sync.queueCount) в очереди") { SyncTasksScreen() }
                     NavigationLink("Журнал запросов") { APILogScreen() }
-                }
-                Section("Очередь: \(queue.count)") {
-                    ForEach(queue) { row in
-                        VStack(alignment: .leading) {
-                            Text(row.mutation?.title ?? "?").font(.footnote.monospaced())
-                            if let error = row.lastError {
-                                Text("попыток \(row.tryCount): \(error)").font(.caption).foregroundStyle(.red)
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -160,7 +150,6 @@ struct DeveloperToolsScreen: View {
     }
 
     private func reload() {
-        queue = (try? sync.database.queue()) ?? []
         checkpoint = (try? sync.database.checkpoint()) ?? 0
     }
 }

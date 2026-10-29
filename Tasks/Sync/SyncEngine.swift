@@ -22,6 +22,8 @@ final class SyncEngine {
     private(set) var lastError: String?
     /// Правки, которые сервер отклонил: показываются пользователю и убираются из очереди.
     var rejected: [String] = []
+    /// Итоги отправки правок за сессию приложения, новые сверху (инструменты разработчика).
+    private(set) var history: [SyncHistoryEntry] = []
 
     private var rerun = false
     private var needsFullSync = false
@@ -146,13 +148,16 @@ final class SyncEngine {
                 continue
             }
             try database.markInFlight(id, true)
+            let started = Date()
             do {
                 try await api.send(mutation)
                 try database.removeQueued(id)
+                record(mutation, .sent, started: started)
                 syncedForGate = false
             } catch let error as APIError where error.category == .needToSync && !syncedForGate {
                 // Сервер принимает правки только от синхронизированного устройства: синк и повтор
                 try database.markInFlight(id, false)
+                record(mutation, .needToSync, started: started, error: error.message)
                 syncedForGate = true
                 try await pull(full: false)
             } catch let error as APIError where error.category == .other {
@@ -160,11 +165,13 @@ final class SyncEngine {
                 // полный синк вернёт серверное состояние
                 logger.warning("Отклонено \(mutation.title, privacy: .public): \(error.message, privacy: .public)")
                 rejected.append(error.message)
+                record(mutation, .rejected, started: started, error: error.message)
                 if mutation.isCreate { try database.dropRejectedCreate(mutation) }
                 try database.removeQueued(id)
                 needsFullSync = true
             } catch {
                 try database.markInFlight(id, false, error: Self.describe(error))
+                record(mutation, .failed, started: started, error: Self.describe(error))
                 throw error
             }
         }
@@ -196,6 +203,14 @@ final class SyncEngine {
         lastSyncSummary = changes.summary
     }
 
+    private func record(_ mutation: Mutation, _ status: SyncHistoryEntry.Status, started: Date, error: String? = nil) {
+        history.insert(SyncHistoryEntry(date: started, mutation: mutation, status: status,
+                                        duration: Date().timeIntervalSince(started), error: error), at: 0)
+        if history.count > 500 { history.removeLast() }
+    }
+
+    func clearHistory() { history = [] }
+
     private static func describe(_ error: Error) -> String {
         if let error = error as? RPCError { return "\(error.code): \(error.message)" }
         return error.localizedDescription
@@ -206,4 +221,27 @@ extension APIClient {
     func setLogoutHandler(_ handler: @escaping @Sendable () -> Void) {
         onLogout = handler
     }
+}
+
+/// Итог одной попытки отправить правку.
+struct SyncHistoryEntry: Identifiable, Sendable {
+    enum Status: Sendable {
+        case sent, needToSync, rejected, failed
+
+        var title: String {
+            switch self {
+            case .sent: "отправлена"
+            case .needToSync: "нужен синк, повтор"
+            case .rejected: "отклонена сервером"
+            case .failed: "ошибка, повтор позже"
+            }
+        }
+    }
+
+    let id = UUID()
+    var date: Date
+    var mutation: Mutation
+    var status: Status
+    var duration: TimeInterval
+    var error: String?
 }
