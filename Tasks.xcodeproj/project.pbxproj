@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		CA0000000000000000000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = CA0000000000000000000002 /* GRDB */; };
+		CA0000000000000000000012 /* ProtoDefinitions in Frameworks */ = {isa = PBXBuildFile; productRef = CA0000000000000000000013 /* ProtoDefinitions */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +45,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				CA0000000000000000000001 /* GRDB in Frameworks */,
+				CA0000000000000000000012 /* ProtoDefinitions in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -96,6 +98,7 @@
 			name = Tasks;
 			packageProductDependencies = (
 				CA0000000000000000000002 /* GRDB */,
+				CA0000000000000000000013 /* ProtoDefinitions */,
 			);
 			productName = Tasks;
 			productReference = CA0000000000000000000004 /* Tasks.app */;
@@ -153,6 +156,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				CA0000000000000000000011 /* XCRemoteSwiftPackageReference "GRDB" */,
+				CA0000000000000000000014 /* XCRemoteSwiftPackageReference "swift-client-grpc" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CA0000000000000000000009 /* Products */;
@@ -225,7 +229,7 @@
 					"DEBUG=1",
 					"$(inherited)",
 				);
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
@@ -246,7 +250,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
@@ -397,6 +401,14 @@
 				version = 7.8.0;
 			};
 		};
+		CA0000000000000000000014 /* XCRemoteSwiftPackageReference "swift-client-grpc" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jedi-tasks/swift-client-grpc";
+			requirement = {
+				kind = exactVersion;
+				version = 0.1.4;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -404,6 +416,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = CA0000000000000000000011 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		CA0000000000000000000013 /* ProtoDefinitions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CA0000000000000000000014 /* XCRemoteSwiftPackageReference "swift-client-grpc" */;
+			productName = ProtoDefinitions;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

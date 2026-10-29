@@ -150,3 +150,55 @@ enum SortMode: String, Codable, CaseIterable, Sendable, DatabaseValueConvertible
         }
     }
 }
+
+/// Строка, которая синхронизируется с сервером: создание, изменение и мягкое удаление — правками очереди.
+protocol SyncedRecord: Codable, Identifiable, Equatable, FetchableRecord, PersistableRecord where ID == UUID {
+    var updatedAt: Date { get set }
+    var deletedAt: Date? { get set }
+    static func created(_ record: Self) -> Mutation
+    static func updated(_ record: Self) -> Mutation
+    static func deleted(_ id: UUID, at: Date) -> Mutation
+    static var entityPrefix: String { get }
+}
+
+extension TaskList: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createList(r) }
+    static func updated(_ r: Self) -> Mutation { .updateList(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deleteList(id, at: at) }
+    static let entityPrefix = "list"
+}
+
+extension ListSection: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createSection(r) }
+    static func updated(_ r: Self) -> Mutation { .updateSection(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deleteSection(id, at: at) }
+    static let entityPrefix = "section"
+}
+
+extension Priority: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createPriority(r) }
+    static func updated(_ r: Self) -> Mutation { .updatePriority(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deletePriority(id, at: at) }
+    static let entityPrefix = "priority"
+}
+
+extension DurationOption: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createDuration(r) }
+    static func updated(_ r: Self) -> Mutation { .updateDuration(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deleteDuration(id, at: at) }
+    static let entityPrefix = "duration"
+}
+
+extension TaskItem: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createTask(r) }
+    static func updated(_ r: Self) -> Mutation { .updateTask(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deleteTask(id, at: at) }
+    static let entityPrefix = "task"
+}
+
+extension Tag: SyncedRecord {
+    static func created(_ r: Self) -> Mutation { .createTag(r) }
+    static func updated(_ r: Self) -> Mutation { .updateTag(r) }
+    static func deleted(_ id: UUID, at: Date) -> Mutation { .deleteTag(id, at: at) }
+    static let entityPrefix = "tag"
+}

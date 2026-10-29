@@ -11,6 +11,7 @@ struct SettingsScreen: View {
 
     var body: some View {
         List {
+            AccountSection()
             Section {
                 ForEach(board.priorities) { priority in
                     HStack {
@@ -80,7 +81,10 @@ struct SettingsScreen: View {
                 Text("Набор оценок для задач. Поменяли минуты — задачи с этим значением получат новое; удалили — перейдут к ближайшему.")
             }
             Section {
-                Stepper(value: $capacity, in: 60...(16 * 60), step: 30) {
+                Stepper(value: Binding(
+                    get: { capacity },
+                    set: { new in capacity = new; errors.run { try database.setDailyCapacity(new) } }
+                ), in: 60...(16 * 60), step: 30) {
                     LabeledContent("Лимит на день", value: Workload.format(capacity))
                 }
             } footer: {

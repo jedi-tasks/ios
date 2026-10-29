@@ -3,7 +3,7 @@ import Testing
 @testable import Tasks
 
 struct AppDatabaseTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func seedsInboxAndPriorities() throws {
         let board = try db.board()
@@ -103,7 +103,7 @@ struct TaskOrderingTests {
 }
 
 struct ReminderImportTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func parsesServiceLinesAndDuration() {
         let note = ReminderNote.parse("Раздел: Calories\nЗаблокировано: ответом Пети с 20.10\n~15 мин grilling + ~1,5 ч реализация", year: 2026)
@@ -149,7 +149,7 @@ struct ReminderImportTests {
 }
 
 struct ColorsAndMarksTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func defaultPrioritiesHaveExclamationMarks() throws {
         #expect(try db.board().priorities.map(\.marks) == ["!!!", "!!", "!"])
@@ -166,7 +166,7 @@ struct ColorsAndMarksTests {
 }
 
 struct PlannedTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func groupsByDayWithOverdueFirstAndDeadlineFallback() throws {
         try db.addTask(title: "Вчера", listId: nil, plannedDay: "2026-10-27")
@@ -184,7 +184,7 @@ struct PlannedTests {
 }
 
 struct AssignmentTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func droppingOnObjectsSetsValues() throws {
         let list = TaskList(name: "LeadLinks")
@@ -224,7 +224,7 @@ struct AssignmentTests {
 }
 
 struct ArrangeTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func arrangeReordersMovesSectionAndSwitchesToManual() throws {
         let list = TaskList(name: "L", sortMode: .priority)
@@ -244,7 +244,7 @@ struct ArrangeTests {
 }
 
 struct TagPruneTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func unusedTagsDisappear() throws {
         let task = try db.addTask(title: "A", listId: nil)
@@ -257,7 +257,7 @@ struct TagPruneTests {
 }
 
 struct WorkloadTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func sumsEstimatesAndCountsUnestimated() throws {
         var a = try db.addTask(title: "A", listId: nil, plannedDay: "2026-10-29")
@@ -291,7 +291,7 @@ struct UnpredictableTests {
 }
 
 struct DurationOptionsTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func seededChangedAndDeletedOptionsMoveTasks() throws {
         #expect(try db.board().durations.map(\.minutes) == [5, 15, 30, 60, 120, 300, -1])
@@ -318,7 +318,7 @@ struct DurationOptionsTests {
 }
 
 struct SearchTests {
-    private let db = try! AppDatabase.makeInMemory()
+    private let db = try! AppDatabase.makeSeeded()
 
     @Test func findsByTitleAndNotesOpenFirst() throws {
         var done = try db.addTask(title: "Купить кофе", listId: nil)
