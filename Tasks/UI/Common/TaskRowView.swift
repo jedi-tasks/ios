@@ -13,8 +13,6 @@ struct TaskRowView: View {
     @Environment(\.database) private var database
     @Environment(\.taskSelection) private var selection
     @State private var errors = ErrorAlert()
-    @State private var showsBlockers = false
-    @State private var showsNotes = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -34,7 +32,7 @@ struct TaskRowView: View {
                 // Приоритет — отдельно, знаками перед названием, как в Напоминаниях
                 (priorityMarks + Text(row.task.title).foregroundStyle(row.isDone ? .secondary : .primary))
                     .strikethrough(row.isDone)
-                meta
+                TaskMeta(row: row, showList: showList, hidesTodayDate: hidesTodayDate, hidesPlannedDay: hidesPlannedDay, board: board)
             }
         }
         .opacity(row.isBlocked && !row.isDone ? 0.5 : 1)
@@ -46,7 +44,21 @@ struct TaskRowView: View {
         return Text(priority.marks + " ").bold().foregroundStyle(Color(hex: priority.colorHex))
     }
 
-    @ViewBuilder private var meta: some View {
+    static func duration(_ minutes: Int) -> String { Workload.format(minutes) }
+}
+
+/// Мета задачи под названием: список, блокеры, сроки, длительность, заметка, теги.
+/// Общая для обычной и раскрытой строки — чтобы раскрытие не меняло высоту строки скачком.
+struct TaskMeta: View {
+    let row: TaskRow
+    var showList: String?
+    var hidesTodayDate = false
+    var hidesPlannedDay = false
+    var board: Board?
+    @State private var showsBlockers = false
+    @State private var showsNotes = false
+
+    var body: some View {
         let today = DayKey.today
         let items = metaItems(today: today)
         // Список — его цветом, без иконки; остальное — каждое с новой строки
@@ -119,7 +131,7 @@ struct TaskRowView: View {
         if let day = row.task.deadlineDay {
             items.append(Meta(text: DayKey.short(day), icon: "flag", color: day <= today ? .red : .secondary))
         }
-        if let minutes = row.task.durationMinutes { items.append(Meta(text: Self.duration(minutes), icon: "clock", color: .secondary)) }
+        if let minutes = row.task.durationMinutes { items.append(Meta(text: TaskRowView.duration(minutes), icon: "clock", color: .secondary)) }
         // Есть заметка — её первая строка
         if let first = row.task.notes.split(whereSeparator: \.isNewline).first {
             items.append(Meta(text: String(first), icon: "note.text", color: .secondary, tap: .notes))
@@ -128,7 +140,6 @@ struct TaskRowView: View {
         return items
     }
 
-    static func duration(_ minutes: Int) -> String { Workload.format(minutes) }
 }
 
 /// Чекбокс задачи: всегда серый и тонкий, как в Напоминаниях.

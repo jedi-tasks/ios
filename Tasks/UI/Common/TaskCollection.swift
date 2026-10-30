@@ -4,18 +4,18 @@ import UIKit
 /// Элемент ленты: задача или произвольная строка (сводка, заголовок раздела, новая задача).
 /// Строка ввода новой задачи — с id на `new`: её ячейка не перерисовывается, чтобы не терять фокус.
 enum TaskCollectionItem {
-    case task(TaskRow, showList: String? = nil, hidesTodayDate: Bool = false)
+    case task(TaskRow, showList: String? = nil, hidesTodayDate: Bool = false, hidesPlannedDay: Bool = false)
     case view(id: String, AnyView)
 
     var id: String {
         switch self {
-        case .task(let row, _, _): "task:" + row.id.uuidString
+        case .task(let row, _, _, _): "task:" + row.id.uuidString
         case .view(let id, _): id
         }
     }
 
     var taskId: UUID? {
-        if case .task(let row, _, _) = self { return row.id }
+        if case .task(let row, _, _, _) = self { return row.id }
         return nil
     }
 
@@ -160,13 +160,15 @@ private struct Representable: UIViewControllerRepresentable {
             let padding: CGFloat = UIDevice.current.userInterfaceIdiom == .phone ? 9 : 6
             let content: AnyView
             switch item {
-            case .task(let row, let showList, let hidesTodayDate):
+            case .task(let row, let showList, let hidesTodayDate, let hidesPlannedDay):
                 if selection?.expanded == row.id, selection?.isSelecting != true {
-                    content = AnyView(ExpandedTaskRow(row: row, board: parent.board) { [weak self] in
+                    content = AnyView(ExpandedTaskRow(row: row, board: parent.board, showList: showList, hidesTodayDate: hidesTodayDate,
+                                                      hidesPlannedDay: hidesPlannedDay) { [weak self] in
                         self?.selection?.expanded = nil
                     })
                 } else {
-                    content = AnyView(TaskRowView(row: row, showList: showList, hidesTodayDate: hidesTodayDate, board: parent.board)
+                    content = AnyView(TaskRowView(row: row, showList: showList, hidesTodayDate: hidesTodayDate,
+                                                  hidesPlannedDay: hidesPlannedDay, board: parent.board)
                         .frame(maxWidth: .infinity, alignment: .leading))
                 }
             case .view(_, let view):
@@ -237,7 +239,8 @@ private struct Representable: UIViewControllerRepresentable {
         // MARK: Свайп
 
         func swipeActions(at indexPath: IndexPath) -> UISwipeActionsConfiguration? {
-            guard let id = taskId(at: indexPath), collection?.isEditing != true else { return nil }
+            // У раскрытой задачи свайп мешал бы редактированию
+            guard let id = taskId(at: indexPath), collection?.isEditing != true, selection?.expanded != id else { return nil }
             let delete = UIContextualAction(style: .destructive, title: "Удалить") { [weak self] _, _, done in
                 try? self?.database?.deleteTask(id)
                 done(true)
@@ -255,7 +258,9 @@ private struct Representable: UIViewControllerRepresentable {
             var ids = [id]
             if let selection, selection.isSelecting, selection.selected.contains(id) { ids = Array(selection.selected) }
             let provider = NSItemProvider(object: DragPayload.tasks(ids) as NSString)
-            return [UIDragItem(itemProvider: provider)]
+            let item = UIDragItem(itemProvider: provider)
+            item.localObject = ids
+            return [item]
         }
 
         func collectionView(_ collectionView: UICollectionView, canHandle session: UIDropSession) -> Bool {
@@ -269,12 +274,35 @@ private struct Representable: UIViewControllerRepresentable {
         }
 
         func collectionView(_ collectionView: UICollectionView, performDropWith coordinator: UICollectionViewDropCoordinator) {
-            guard let onDrop = parent?.onDrop else { return }
+            guard let onDrop = parent?.onDrop, let dataSource else { return }
             let index = coordinator.destinationIndexPath?.item ?? order.count
-            let previous = index > 0 && index - 1 < order.count ? order[index - 1] : nil
-            let next = index < order.count ? order[index] : nil
-            _ = coordinator.session.loadObjects(ofClass: NSString.self) { strings in
-                _ = onDrop(strings.compactMap { $0 as? String }, previous, next)
+            // Своё перетаскивание: задачи известны сразу. Индекс назначения UIKit считает уже без них —
+            // соседей ищем в ленте без перетаскиваемых, иначе при переносе вниз задача вставала на строку выше
+            let local = coordinator.items.compactMap { $0.dragItem.localObject as? [UUID] }.flatMap { $0 }
+            guard !local.isEmpty else {
+                let previous = index > 0 && index - 1 < order.count ? order[index - 1] : nil
+                let next = index < order.count ? order[index] : nil
+                _ = coordinator.session.loadObjects(ofClass: NSString.self) { strings in
+                    _ = onDrop(strings.compactMap { $0 as? String }, previous, next)
+                }
+                return
+            }
+            let movedIds = Set(local.map { "task:" + $0.uuidString })
+            let moving = order.filter(movedIds.contains)
+            var rest = order.filter { !movedIds.contains($0) }
+            let position = min(index, rest.count)
+            let previous = position > 0 ? rest[position - 1] : nil
+            let next = position < rest.count ? rest[position] : nil
+            guard onDrop([DragPayload.tasks(local)], previous, next) else { return }
+            // Сразу ставим задачи на новое место — база потом пришлёт тот же порядок, и лента не дёрнется
+            rest.insert(contentsOf: moving, at: position)
+            order = rest
+            var snapshot = NSDiffableDataSourceSnapshot<Int, String>()
+            snapshot.appendSections([0])
+            snapshot.appendItems(order)
+            dataSource.apply(snapshot, animatingDifferences: false)
+            if let first = moving.first, let target = dataSource.indexPath(for: first) {
+                for item in coordinator.items { coordinator.drop(item.dragItem, toItemAt: target) }
             }
         }
     }

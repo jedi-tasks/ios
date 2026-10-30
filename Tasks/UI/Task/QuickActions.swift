@@ -5,13 +5,27 @@ import SwiftUI
 struct ExpandedTaskRow: View {
     let row: TaskRow
     let board: Board
+    var showList: String?
+    var hidesTodayDate = false
+    var hidesPlannedDay = false
     let onCollapse: () -> Void
     @Environment(\.database) private var database
     @Environment(\.openTask) private var openTask
-    @State private var title = ""
+    /// Сразу с названием: пустое поле на первом кадре давало скачок высоты.
+    @State private var title: String
     @FocusState private var focused: Bool
-    @State private var showsActions = false
     @State private var errors = ErrorAlert()
+
+    init(row: TaskRow, board: Board, showList: String? = nil, hidesTodayDate: Bool = false, hidesPlannedDay: Bool = false,
+         onCollapse: @escaping () -> Void) {
+        self.row = row
+        self.board = board
+        self.showList = showList
+        self.hidesTodayDate = hidesTodayDate
+        self.hidesPlannedDay = hidesPlannedDay
+        self.onCollapse = onCollapse
+        _title = State(initialValue: row.task.title)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -20,7 +34,7 @@ struct ExpandedTaskRow: View {
             } label: { CheckCircle(done: row.isDone) }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     // Знаки приоритета остаются на месте — строка выглядит так же, только название редактируется
                     if let priority = row.priority, !priority.marks.isEmpty {
@@ -50,19 +64,13 @@ struct ExpandedTaskRow: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)
                 }
-                // Быстрые действия выползают из-под названия
-                if showsActions {
-                    QuickActions(row: row, board: board)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                // Строка выглядит как обычная, ниже добавляются быстрые действия — высота меняется один раз
+                TaskMeta(row: row, showList: showList, hidesTodayDate: hidesTodayDate, hidesPlannedDay: hidesPlannedDay, board: board)
+                QuickActions(row: row, board: board)
+                    .padding(.top, 5)
             }
-            .clipped()
         }
-        .onAppear {
-            title = row.task.title
-            focused = true
-            withAnimation(.snappy) { showsActions = true }
-        }
+        .onAppear { focused = true }
         .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
         .onDisappear { save() }
         .errorAlert(errors)
