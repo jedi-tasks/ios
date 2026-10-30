@@ -13,6 +13,8 @@ struct TaskRowView: View {
     @Environment(\.database) private var database
     @Environment(\.taskSelection) private var selection
     @State private var errors = ErrorAlert()
+    @State private var showsBlockers = false
+    @State private var showsNotes = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -55,20 +57,65 @@ struct TaskRowView: View {
             Text(list).font(.caption).foregroundStyle(Color(hex: row.listColorHex))
         }
         ForEach(items, id: \.text) { item in
-            Label(item.text, systemImage: item.icon)
-                .font(.caption)
-                .foregroundStyle(item.color)
-                .labelStyle(.titleAndIcon)
-                .lineLimit(1)
+            if let tap = item.tap {
+                // Замок и заметка открываются по тапу
+                Button { tap == .blockers ? (showsBlockers = true) : (showsNotes = true) } label: { label(item) }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: tap == .blockers ? $showsBlockers : $showsNotes) {
+                        Group { tap == .blockers ? AnyView(blockersPopover) : AnyView(notesPopover) }
+                            .presentationCompactAdaptation(.popover)
+                    }
+            } else {
+                label(item)
+            }
         }
     }
 
-    private struct Meta { var text: String; var icon: String; var color: Color }
+    private func label(_ item: Meta) -> some View {
+        Label(item.text, systemImage: item.icon)
+            .font(.caption)
+            .foregroundStyle(item.color)
+            .labelStyle(.titleAndIcon)
+            .lineLimit(1)
+    }
+
+    /// Активные блокеры: задача-блокер — её названием, иначе — причина; и с какого дня.
+    private var blockersPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Заблокировано").font(.headline)
+            ForEach(row.blockers.filter(\.isActive)) { blocker in
+                VStack(alignment: .leading, spacing: 2) {
+                    if let id = blocker.blockingTaskId {
+                        Label(board?.row(id)?.task.title ?? "Задача", systemImage: "checklist")
+                    } else {
+                        Label(blocker.reason ?? "", systemImage: "text.alignleft")
+                    }
+                    Text("с " + DayKey.short(blocker.sinceDay)).font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 240, alignment: .leading)
+    }
+
+    private var notesPopover: some View {
+        ScrollView {
+            Text(row.task.notes)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding()
+        }
+        .frame(minWidth: 280, idealWidth: 340, maxHeight: 400)
+    }
+
+    private enum Tap { case blockers, notes }
+
+    private struct Meta { var text: String; var icon: String; var color: Color; var tap: Tap? = nil }
 
     private func metaItems(today: String) -> [Meta] {
         var items: [Meta] = []
         let blockers = row.blockers.filter(\.isActive)
-        if !blockers.isEmpty { items.append(Meta(text: "\(blockers.count)", icon: "lock", color: .orange)) }
+        if !blockers.isEmpty { items.append(Meta(text: "\(blockers.count)", icon: "lock", color: .orange, tap: .blockers)) }
         if let day = row.task.plannedDay, !hidesPlannedDay, !(hidesTodayDate && day == today) {
             items.append(Meta(text: DayKey.short(day), icon: "calendar", color: day < today ? .red : .secondary))
         }
@@ -76,6 +123,10 @@ struct TaskRowView: View {
             items.append(Meta(text: DayKey.short(day), icon: "flag", color: day <= today ? .red : .secondary))
         }
         if let minutes = row.task.durationMinutes { items.append(Meta(text: Self.duration(minutes), icon: "clock", color: .secondary)) }
+        // Есть заметка — её первая строка
+        if let first = row.task.notes.split(whereSeparator: \.isNewline).first {
+            items.append(Meta(text: String(first), icon: "note.text", color: .secondary, tap: .notes))
+        }
         if !row.tags.isEmpty { items.append(Meta(text: row.tags.map(\.name).joined(separator: ", "), icon: "tag", color: .secondary)) }
         return items
     }

@@ -15,6 +15,8 @@ struct NewTaskRow: View {
     let onEnd: () -> Void
     @State private var title = ""
     @FocusState private var focused: Bool
+    /// Enter с текстом: на iPhone клавиатура всё равно уходит, и строку надо вернуть, а не закрыть.
+    @State private var continuing = false
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -28,6 +30,7 @@ struct NewTaskRow: View {
                         focused = false
                     } else {
                         commit()
+                        continuing = true
                         focused = true
                     }
                 }
@@ -36,7 +39,15 @@ struct NewTaskRow: View {
         .onAppear { focused = true }
         .onDisappear(perform: commit)
         .onChange(of: focused) { _, isFocused in
-            guard !isFocused else { return }
+            guard !isFocused else {
+                continuing = false
+                return
+            }
+            if continuing {
+                continuing = false
+                focused = true
+                return
+            }
             commit()
             onEnd()
         }
