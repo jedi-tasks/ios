@@ -63,7 +63,6 @@ struct PlannedScreen: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.plain)
-            .padding(.vertical, 4)
         }
     }
 

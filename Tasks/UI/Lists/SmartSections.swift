@@ -139,7 +139,6 @@ struct FilteredScreen: View {
                 TaskLink(id: row.id) {
                     TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
                 }
-                .padding(.vertical, 6)
             }
         }
         .overlay { if rows.isEmpty { ContentUnavailableView("Нет задач", systemImage: "tray") } }

@@ -21,6 +21,13 @@ struct TasksApp: App {
                 .environment(\.database, database)
                 .environment(sync)
         }
+        .commands {
+            // На Mac настройки открываются из меню приложения, как везде: Cmd+,
+            CommandGroup(replacing: .appSettings) {
+                Button("Настройки…") { NotificationCenter.default.post(name: .openSettings, object: nil) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
+        }
     }
 }
 

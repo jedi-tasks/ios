@@ -7,6 +7,7 @@ struct NewTaskTarget: Equatable {
 
 /// Пустая строка новой задачи, как в Напоминаниях: курсор сразу в ней.
 /// Enter сохраняет и открывает следующую строку; уход с пустой строки — убирает её.
+/// Строку убрали снаружи (тап по пустому месту) — набранное сохраняется.
 struct NewTaskRow: View {
     var colorHex: String
     /// Сохраняет задачу с названием; вызывается только для непустого текста.
@@ -33,6 +34,7 @@ struct NewTaskRow: View {
         }
         .listRowSeparator(.hidden)
         .onAppear { focused = true }
+        .onDisappear(perform: commit)
         .onChange(of: focused) { _, isFocused in
             guard !isFocused else { return }
             commit()

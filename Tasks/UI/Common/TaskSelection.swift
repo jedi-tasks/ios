@@ -9,9 +9,26 @@ final class TaskSelectionState {
     var selected: Set<UUID> = []
     /// Задача, под которой раскрыта панель быстрых действий.
     var expanded: UUID?
+    /// Рамки строк в координатах ленты — для выбора двумя пальцами.
+    @ObservationIgnored var rowFrames: [UUID: CGRect] = [:]
 
     func toggle(_ id: UUID) {
         if selected.remove(id) == nil { selected.insert(id) }
+    }
+
+    /// Cmd-клик: включает режим выбора и отмечает задачу, как в Напоминаниях.
+    func commandToggle(_ id: UUID) {
+        if !isSelecting {
+            isSelecting = true
+            selected = []
+            expanded = nil
+        }
+        toggle(id)
+    }
+
+    /// Задача под точкой ленты.
+    func row(at point: CGPoint) -> UUID? {
+        rowFrames.first { $0.value.contains(point) }?.key
     }
 }
 
@@ -29,11 +46,19 @@ struct TaskLink<Content: View>: View {
     @Environment(\.taskSelection) private var selection
     @Environment(\.taskBoard) private var board
 
+    /// Отступ между строками: на iPhone строки крупнее и без него слипаются.
+    static var verticalPadding: CGFloat { UIDevice.current.userInterfaceIdiom == .phone ? 9 : 6 }
+
     var body: some View {
         // Под пальцем/курсором — значок, а не вся строка, как в Напоминаниях
         link.onDrag { NSItemProvider(object: DragPayload.tasks(draggedIds) as NSString) } preview: {
             DragBadge(count: draggedIds.count)
         }
+        .padding(.vertical, Self.verticalPadding)
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TaskScroll<EmptyView>.space)) } action: { frame in
+            selection?.rowFrames[id] = frame
+        }
+        .onDisappear { selection?.rowFrames[id] = nil }
     }
 
     /// Перетаскивается отмеченная задача — значит, все отмеченные, как в Напоминаниях.
@@ -52,11 +77,14 @@ struct TaskLink<Content: View>: View {
             if expanded {
                 ExpandedTaskRow(row: row, board: board) { selection.expanded = nil }
             } else {
-                // Жест, а не кнопка: без подсветки нажатия — как тап в текстовое поле
+                // Жест, а не кнопка: без подсветки нажатия — как тап в текстовое поле.
+                // Cmd-клик — отметить задачу (и войти в режим выбора)
                 content
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
-                    .onTapGesture { selection.expanded = id }
+                    .gesture(RowTap { command in
+                        if command { selection.commandToggle(id) } else { selection.expanded = id }
+                    })
             }
         } else {
             NavigationLink(value: id) { content }
@@ -66,16 +94,86 @@ struct TaskLink<Content: View>: View {
 
 /// Лента задач на обычной прокрутке, а не на `List`: внутри системного списка не срабатывали
 /// тап с раскрытием быстрых действий и бросок задачи на задачу.
+/// Тап по пустому месту под задачами — `onEmptyTap` (новая задача или выход из ввода).
+/// Протяжка двумя пальцами по строкам — отмечает задачи, как в Напоминаниях.
 struct TaskScroll<Content: View>: View {
+    /// Координаты ленты: в них строки сообщают свои рамки.
+    static var space: String { "taskScroll" }
+    var onEmptyTap: (() -> Void)?
     @ViewBuilder let content: Content
+    @Environment(\.taskSelection) private var selection
+    @State private var contentBottom: CGFloat = 0
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) { content }
                 .padding(.horizontal, 16)
+                .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).maxY } action: { contentBottom = $0 }
                 .padding(.bottom, 80)
+                .gesture(TwoFingerSelect { point in
+                    guard let selection, let id = selection.row(at: point) else { return }
+                    if !selection.isSelecting {
+                        selection.isSelecting = true
+                        selection.selected = []
+                        selection.expanded = nil
+                    }
+                    selection.selected.insert(id)
+                })
         }
-        .collapsesTaskOnOutsideTap()
+        .coordinateSpace(.named(Self.space))
+        .contentShape(Rectangle())
+        .onTapGesture(coordinateSpace: .named(Self.space)) { location in
+            if selection?.expanded != nil {
+                selection?.expanded = nil
+            } else if location.y > contentBottom, selection?.isSelecting != true {
+                onEmptyTap?()
+            }
+        }
+    }
+}
+
+/// Тап по строке с признаком Cmd. В SwiftUI на iOS у жестов нет модификаторов клавиш — берём их у UIKit.
+private struct RowTap: UIGestureRecognizerRepresentable {
+    let onTap: (_ command: Bool) -> Void
+
+    func makeUIGestureRecognizer(context: Context) -> UITapGestureRecognizer { UITapGestureRecognizer() }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UITapGestureRecognizer, context: Context) {
+        if recognizer.state == .ended { onTap(recognizer.modifierFlags.contains(.command)) }
+    }
+}
+
+/// Протяжка двумя пальцами. Пока она идёт, прокрутка выключена — иначе лента уезжает из-под пальцев.
+private struct TwoFingerSelect: UIGestureRecognizerRepresentable {
+    /// Точка в координатах ленты, над которой сейчас пальцы.
+    let onMove: (CGPoint) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.minimumNumberOfTouches = 2
+        pan.maximumNumberOfTouches = 2
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let scroll = sequence(first: recognizer.view, next: { $0?.superview }).compactMap { $0 as? UIScrollView }.first
+        switch recognizer.state {
+        case .began:
+            scroll?.panGestureRecognizer.isEnabled = false
+            onMove(context.converter.location(in: .named(TaskScroll<EmptyView>.space)))
+        case .changed:
+            onMove(context.converter.location(in: .named(TaskScroll<EmptyView>.space)))
+        default:
+            scroll?.panGestureRecognizer.isEnabled = true
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                               shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
     }
 }
 

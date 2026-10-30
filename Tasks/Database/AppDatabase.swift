@@ -143,6 +143,22 @@ struct AppDatabase: Sendable {
         }
     }
 
+    /// Ручной порядок задач из разных списков («Сегодня»): задачи обмениваются своими же значениями `manualOrder`,
+    /// поэтому чужие задачи в списках не сдвигаются, а меняется только взаимный порядок переставленных.
+    func permuteOrder(_ order: [UUID]) throws {
+        try writer.write { db in
+            let tasks = try TaskItem.fetchAll(db, keys: order)
+            var slots = tasks.map(\.manualOrder).sorted()
+            // Совпавшие значения не дали бы порядка — разводим их
+            for index in slots.indices.dropFirst() where slots[index] <= slots[index - 1] {
+                slots[index] = slots[index - 1] + 0.001
+            }
+            for (id, slot) in zip(order, slots) {
+                try Self.modify(db, TaskItem.self, id) { $0.manualOrder = slot }
+            }
+        }
+    }
+
     func setSortMode(_ mode: SortMode, list id: UUID) throws {
         try writer.write { db in try Self.modify(db, TaskList.self, id) { $0.sortMode = mode } }
     }

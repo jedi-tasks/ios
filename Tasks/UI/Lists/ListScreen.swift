@@ -24,7 +24,8 @@ struct ListScreen: View {
         let list = board.list(listId)
         let mode = list?.sortMode ?? .manual
         let open = TaskOrdering.sorted(board.rows(in: listId, done: false), by: mode)
-        TaskScroll {
+        // Тап под задачами — новая задача без раздела; ещё тап — закончить ввод
+        TaskScroll(onEmptyTap: { adding == nil ? add(NewTaskTarget()) : (adding = nil) }) {
             let load = Workload(open)
             if !load.summary.isEmpty {
                 Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
@@ -118,7 +119,6 @@ struct ListScreen: View {
     private func group(_ rows: [TaskRow], section: UUID?, all: [TaskRow], movable: Bool = true) -> some View {
         ForEach(rows) { row in
             TaskLink(id: row.id) { TaskRowView(row: row, board: board) }
-                .padding(.vertical, 6)
                 // Бросок на задачу — встать перед ней (и в её раздел)
                 .dropDestination(for: String.self) { items, _ in
                     movable && place(items, before: row.id, section: section, all: all)
