@@ -71,6 +71,19 @@ struct ListScreen: View {
                 group(done, section: nil, all: [], movable: false)
             }
         }
+        .overlay {
+            // Пустой Inbox — цель «Пути джедая», заслуживает поздравления
+            if list?.isInbox == true && open.isEmpty && adding == nil && !showDone {
+                ContentUnavailableView {
+                    Label("Inbox пуст", systemImage: "sparkles")
+                        .symbolRenderingMode(.multicolor)
+                        .symbolEffect(.bounce, options: .nonRepeating)
+                } description: {
+                    Text("Всё разобрано. Можно выдохнуть ☕️")
+                }
+                .allowsHitTesting(false)
+            }
+        }
         .navigationTitle(list?.name ?? "")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
         .toolbar {
