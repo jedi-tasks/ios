@@ -45,13 +45,16 @@ struct TaskLink<Content: View>: View {
     @ViewBuilder let content: Content
     @Environment(\.taskSelection) private var selection
     @Environment(\.taskBoard) private var board
+    @Environment(\.database) private var database
+    /// Сдвиг строки свайпом влево: под ней — кнопка «Удалить».
+    @State private var swipe: CGFloat = 0
 
     /// Отступ между строками: на iPhone строки крупнее и без него слипаются.
     static var verticalPadding: CGFloat { UIDevice.current.userInterfaceIdiom == .phone ? 9 : 6 }
 
     var body: some View {
         // Под пальцем/курсором — значок, а не вся строка, как в Напоминаниях
-        link.onDrag { NSItemProvider(object: DragPayload.tasks(draggedIds) as NSString) } preview: {
+        swipeable.onDrag { NSItemProvider(object: DragPayload.tasks(draggedIds) as NSString) } preview: {
             DragBadge(count: draggedIds.count)
         }
         .padding(.vertical, Self.verticalPadding)
@@ -59,6 +62,40 @@ struct TaskLink<Content: View>: View {
             selection?.rowFrames[id] = frame
         }
         .onDisappear { selection?.rowFrames[id] = nil }
+    }
+
+    /// Свайп влево, как в Напоминаниях: открывает «Удалить», длинный свайп — удаляет сразу.
+    private var swipeable: some View {
+        let width: CGFloat = 80
+        return link
+            .offset(x: swipe)
+            .background(alignment: .trailing) {
+                if swipe < 0 {
+                    Button { delete() } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.white)
+                            .frame(width: max(-swipe, width))
+                            .frame(maxHeight: .infinity)
+                            .background(.red)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .clipped()
+            .gesture(HorizontalSwipe(enabled: selection?.isSelecting != true && selection?.expanded != id) { dx, ended in
+                guard ended else {
+                    swipe = min(0, dx + (swipe <= -width ? -width : 0))
+                    return
+                }
+                withAnimation(.snappy) {
+                    if swipe < -200 { delete() } else { swipe = swipe < -width / 2 ? -width : 0 }
+                }
+            })
+    }
+
+    private func delete() {
+        swipe = 0
+        try? database.deleteTask(id)
     }
 
     /// Перетаскивается отмеченная задача — значит, все отмеченные, как в Напоминаниях.
@@ -140,6 +177,43 @@ private struct RowTap: UIGestureRecognizerRepresentable {
 
     func handleUIGestureRecognizerAction(_ recognizer: UITapGestureRecognizer, context: Context) {
         if recognizer.state == .ended { onTap(recognizer.modifierFlags.contains(.command)) }
+    }
+}
+
+/// Горизонтальная протяжка одним пальцем. UIKit, а не `DragGesture`: тот внутри прокрутки мешал листать —
+/// а этот начинается только при движении вбок, вертикальное отдаётся прокрутке.
+private struct HorizontalSwipe: UIGestureRecognizerRepresentable {
+    let enabled: Bool
+    /// Сдвиг по X от начала и закончился ли жест.
+    let onChange: (_ dx: CGFloat, _ ended: Bool) -> Void
+
+    func makeCoordinator(converter: CoordinateSpaceConverter) -> Coordinator { Coordinator() }
+
+    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
+        let pan = UIPanGestureRecognizer()
+        pan.maximumNumberOfTouches = 1
+        pan.delegate = context.coordinator
+        return pan
+    }
+
+    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        recognizer.isEnabled = enabled
+    }
+
+    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
+        let dx = recognizer.translation(in: recognizer.view).x
+        switch recognizer.state {
+        case .began, .changed: onChange(dx, false)
+        default: onChange(dx, true)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        func gestureRecognizerShouldBegin(_ recognizer: UIGestureRecognizer) -> Bool {
+            guard let pan = recognizer as? UIPanGestureRecognizer else { return false }
+            let velocity = pan.velocity(in: pan.view)
+            return abs(velocity.x) > abs(velocity.y) * 1.5
+        }
     }
 }
 
