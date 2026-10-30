@@ -7,6 +7,17 @@ struct TasksApp: App {
 
     init() {
         do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-demo") {
+                let database = try AppDatabase.makeInMemory()
+                try database.seedDemo()
+                let sync = SyncEngine(database: database)
+                sync.startDemo()
+                self.database = database
+                _sync = State(initialValue: sync)
+                return
+            }
+            #endif
             let database = try AppDatabase.makeShared()
             self.database = database
             _sync = State(initialValue: SyncEngine(database: database))
@@ -20,6 +31,13 @@ struct TasksApp: App {
             RootView()
                 .environment(\.database, database)
                 .environment(sync)
+        }
+        .commands {
+            // На Mac настройки открываются из меню приложения, как везде: Cmd+,
+            CommandGroup(replacing: .appSettings) {
+                Button("Настройки…") { NotificationCenter.default.post(name: .openSettings, object: nil) }
+                    .keyboardShortcut(",", modifiers: .command)
+            }
         }
     }
 }

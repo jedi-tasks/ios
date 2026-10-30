@@ -11,26 +11,10 @@ struct TodayScreen: View {
     var body: some View {
         let today = DayKey.today
         let rows = board.today(today, mode: mode)
-        TaskScroll {
-            // Сколько времени займёт день
-            let load = Workload(rows)
-            if !load.summary.isEmpty {
-                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
-            }
-            ForEach(rows) { row in
-                TaskLink(id: row.id) {
-                    TaskRowView(row: row, showList: board.list(row.task.listId)?.name, hidesTodayDate: true, board: board)
-                }
-                .padding(.vertical, 6)
-            }
-            // Новая задача из «Сегодня» — в Inbox со сроком на сегодня
-            if adding {
-                NewTaskRow(colorHex: board.inbox?.colorHex ?? TaskList.palette[0]) { title in
-                    errors.run { try database.addTask(title: title, listId: nil, plannedDay: today) }
-                } onEnd: {
-                    adding = false
-                }
-            }
+        // Тап под задачами — новая задача; ещё тап — закончить ввод.
+        // Бросок между задачами — встать туда; «Сегодня» переходит на ручной порядок
+        TaskCollection(items: items(rows, today: today), board: board, onEmptyTap: { adding.toggle() }) { payload, _, next in
+            place(payload, before: next.flatMap(TaskCollectionItem.taskId(of:)), rows: rows)
         }
         .overlay {
             if rows.isEmpty && !adding { ContentUnavailableView("На сегодня всё", systemImage: "checkmark.seal") }
@@ -38,23 +22,64 @@ struct TodayScreen: View {
         .navigationTitle("Сегодня")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
         .toolbar {
-            ToolbarItem { SortMenu(mode: $mode, allowsManual: false) }
+            ToolbarItem { SortMenu(mode: $mode) }
             ToolbarItem { Button("Добавить", systemImage: "plus") { adding = true } }
         }
         .taskSelection(board: board)
         .observingBoard($board, in: database)
         .errorAlert(errors)
     }
+
+    private func items(_ rows: [TaskRow], today: String) -> [TaskCollectionItem] {
+        var items: [TaskCollectionItem] = []
+        // Сколько времени займёт день
+        let load = Workload(rows)
+        if !load.summary.isEmpty {
+            items.append(.view(id: "summary", AnyView(
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
+            )))
+        }
+        items += rows.map { .task($0, showList: board.list($0.task.listId)?.name, hidesTodayDate: true) }
+        // Новая задача из «Сегодня» — в Inbox со сроком на сегодня
+        if adding {
+            items.append(.view(id: "new", AnyView(
+                NewTaskRow(colorHex: board.inbox?.colorHex ?? TaskList.palette[0]) { title in
+                    errors.run { try database.addTask(title: title, listId: nil, plannedDay: today) }
+                } onEnd: {
+                    adding = false
+                }
+            )))
+        }
+        return items
+    }
+
+    /// Ставит брошенные задачи перед `target` (или в конец) в видимом порядке «Сегодня».
+    private func place(_ items: [String], before target: UUID?, rows: [TaskRow]) -> Bool {
+        let ids = rows.map(\.id)
+        let moved = items.flatMap(DragPayload.taskIds).filter { $0 != target && ids.contains($0) }
+        guard !moved.isEmpty else { return false }
+        var order = ids.filter { !moved.contains($0) }
+        let index = target.flatMap { order.firstIndex(of: $0) } ?? order.count
+        let after = index > 0 ? order[index - 1] : nil
+        let before = index < order.count ? order[index] : nil
+        order.insert(contentsOf: moved, at: index)
+        errors.run {
+            // В ручном порядке — только перемещённые задачи между соседями; иначе видимый порядок фиксируется целиком
+            let placed = try mode == .manual && database.insert(moved, after: after, before: before)
+            if !placed { try database.permuteOrder(order) }
+        }
+        mode = .manual
+        return true
+    }
 }
 
 struct SortMenu: View {
     @Binding var mode: SortMode
-    var allowsManual = true
 
     var body: some View {
         Menu {
             Picker("Сортировка", selection: $mode) {
-                ForEach(SortMode.allCases.filter { allowsManual || $0 != .manual }, id: \.self) { Text($0.title).tag($0) }
+                ForEach(SortMode.allCases, id: \.self) { Text($0.title).tag($0) }
             }
         } label: {
             Label("Сортировка", systemImage: "arrow.up.arrow.down")

@@ -25,6 +25,24 @@ final class SyncEngine {
     /// Итоги отправки правок за сессию приложения, новые сверху (инструменты разработчика).
     private(set) var history: [SyncHistoryEntry] = []
 
+    #if DEBUG
+    /// Демо без сервера — проверять интерфейс в симуляторе (аргумент запуска `-demo`).
+    private(set) var isDemo = false
+
+    func startDemo() {
+        isDemo = true
+        isSignedIn = true
+    }
+    #endif
+
+    private var isOffline: Bool {
+        #if DEBUG
+        isDemo
+        #else
+        false
+        #endif
+    }
+
     private var rerun = false
     private var needsFullSync = false
     private var loops: [Task<Void, Never>] = []
@@ -71,7 +89,7 @@ final class SyncEngine {
 
     /// Запуск при старте приложения и после входа: очередь, синк, подписка, повтор по таймеру.
     func start() {
-        guard isSignedIn, loops.isEmpty else { return }
+        guard isSignedIn, loops.isEmpty, !isOffline else { return }
         try? database.resetInFlight()
         loops.append(Task { [weak self] in
             guard let self else { return }
@@ -110,6 +128,7 @@ final class SyncEngine {
     }
 
     func schedule() {
+        guard !isOffline else { return }
         Task { await run() }
     }
 

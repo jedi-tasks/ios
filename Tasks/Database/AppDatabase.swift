@@ -143,6 +143,49 @@ struct AppDatabase: Sendable {
         }
     }
 
+    /// Вставка между соседями, как ранги счетов в Coin: меняются только перемещённые задачи —
+    /// их `manualOrder` встаёт между значениями `after` и `before`, соседи не трогаются (одна правка в синк на задачу).
+    /// `false` — между соседями нет места (или они не по порядку): тогда вызывающий перенумеровывает весь порядок.
+    func insert(_ moved: [UUID], after: UUID?, before: UUID?, update: (inout TaskItem) -> Void = { _ in }) throws -> Bool {
+        try writer.write { db in
+            let low = try after.flatMap { try TaskItem.fetchOne(db, key: $0)?.manualOrder }
+            let high = try before.flatMap { try TaskItem.fetchOne(db, key: $0)?.manualOrder }
+            let count = Double(moved.count)
+            let (from, to): (Double, Double) = switch (low, high) {
+            case let (low?, high?): (low, high)
+            case let (low?, nil): (low, low + count + 1)
+            case let (nil, high?): (high - count - 1, high)
+            case (nil, nil): (0, count + 1)
+            }
+            let step = (to - from) / (count + 1)
+            // Double делится пополам ~50 раз; дальше значения слипаются — пора перенумеровать
+            guard step > 1e-9 else { return false }
+            for (index, id) in moved.enumerated() {
+                try Self.modify(db, TaskItem.self, id) {
+                    $0.manualOrder = from + step * Double(index + 1)
+                    update(&$0)
+                }
+            }
+            return true
+        }
+    }
+
+    /// Ручной порядок задач из разных списков («Сегодня»): задачи обмениваются своими же значениями `manualOrder`,
+    /// поэтому чужие задачи в списках не сдвигаются, а меняется только взаимный порядок переставленных.
+    func permuteOrder(_ order: [UUID]) throws {
+        try writer.write { db in
+            let tasks = try TaskItem.fetchAll(db, keys: order)
+            var slots = tasks.map(\.manualOrder).sorted()
+            // Совпавшие значения не дали бы порядка — разводим их
+            for index in slots.indices.dropFirst() where slots[index] <= slots[index - 1] {
+                slots[index] = slots[index - 1] + 0.001
+            }
+            for (id, slot) in zip(order, slots) {
+                try Self.modify(db, TaskItem.self, id) { $0.manualOrder = slot }
+            }
+        }
+    }
+
     func setSortMode(_ mode: SortMode, list id: UUID) throws {
         try writer.write { db in try Self.modify(db, TaskList.self, id) { $0.sortMode = mode } }
     }

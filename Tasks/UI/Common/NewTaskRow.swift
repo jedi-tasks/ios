@@ -7,6 +7,7 @@ struct NewTaskTarget: Equatable {
 
 /// Пустая строка новой задачи, как в Напоминаниях: курсор сразу в ней.
 /// Enter сохраняет и открывает следующую строку; уход с пустой строки — убирает её.
+/// Строку убрали снаружи (тап по пустому месту) — набранное сохраняется.
 struct NewTaskRow: View {
     var colorHex: String
     /// Сохраняет задачу с названием; вызывается только для непустого текста.
@@ -27,16 +28,22 @@ struct NewTaskRow: View {
                         focused = false
                     } else {
                         commit()
-                        focused = true
+                        // На iPhone Enter всё равно снимает фокус — возвращаем его следующим тактом
+                        DispatchQueue.main.async { focused = true }
                     }
                 }
         }
         .listRowSeparator(.hidden)
         .onAppear { focused = true }
+        .onDisappear(perform: commit)
         .onChange(of: focused) { _, isFocused in
             guard !isFocused else { return }
-            commit()
-            onEnd()
+            // Фокус мог уйти на миг (Enter с текстом) — закрываем строку, только если он не вернулся
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                guard !focused else { return }
+                commit()
+                onEnd()
+            }
         }
     }
 

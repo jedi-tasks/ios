@@ -63,7 +63,7 @@ struct ListsPanel: View {
     }
 
     private func header(_ title: String) -> some View {
-        Text(title).font(.headline).foregroundStyle(.secondary).padding(.top, 12).padding(.bottom, 4)
+        Text(title).font(.headline).foregroundStyle(.secondary).padding(.top, 16).padding(.bottom, 6)
     }
 
     /// Ставит перетащенные списки перед `target`.
@@ -129,7 +129,7 @@ private struct ListPanelRow: View {
     var body: some View {
         ListRowLabel(list: list, count: count)
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 10)
             .background(background, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay {
                 if onDropLists != nil {

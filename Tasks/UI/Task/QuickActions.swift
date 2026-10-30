@@ -5,12 +5,27 @@ import SwiftUI
 struct ExpandedTaskRow: View {
     let row: TaskRow
     let board: Board
+    var showList: String?
+    var hidesTodayDate = false
+    var hidesPlannedDay = false
     let onCollapse: () -> Void
     @Environment(\.database) private var database
-    @State private var title = ""
+    @Environment(\.openTask) private var openTask
+    /// Сразу с названием: пустое поле на первом кадре давало скачок высоты.
+    @State private var title: String
     @FocusState private var focused: Bool
-    @State private var showsActions = false
     @State private var errors = ErrorAlert()
+
+    init(row: TaskRow, board: Board, showList: String? = nil, hidesTodayDate: Bool = false, hidesPlannedDay: Bool = false,
+         onCollapse: @escaping () -> Void) {
+        self.row = row
+        self.board = board
+        self.showList = showList
+        self.hidesTodayDate = hidesTodayDate
+        self.hidesPlannedDay = hidesPlannedDay
+        self.onCollapse = onCollapse
+        _title = State(initialValue: row.task.title)
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
@@ -19,7 +34,7 @@ struct ExpandedTaskRow: View {
             } label: { CheckCircle(done: row.isDone) }
             .buttonStyle(.plain)
 
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
                     // Знаки приоритета остаются на месте — строка выглядит так же, только название редактируется
                     if let priority = row.priority, !priority.marks.isEmpty {
@@ -32,25 +47,30 @@ struct ExpandedTaskRow: View {
                             save()
                             onCollapse()
                         }
-                    NavigationLink(value: row.id) {
-                        Image(systemName: "info.circle").font(.title3)
+                        // Многострочное поле на iPhone вставляет перенос вместо onSubmit — считаем его «Готово»
+                        .onChange(of: title) {
+                            guard title.contains(where: \.isNewline) else { return }
+                            title = title.filter { !$0.isNewline }
+                            save()
+                            onCollapse()
+                        }
+                    Group {
+                        if let openTask {
+                            Button { openTask(row.id) } label: { Image(systemName: "info.circle").font(.title3) }
+                        } else {
+                            NavigationLink(value: row.id) { Image(systemName: "info.circle").font(.title3) }
+                        }
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)
                 }
-                // Быстрые действия выползают из-под названия
-                if showsActions {
-                    QuickActions(row: row, board: board)
-                        .transition(.move(edge: .top).combined(with: .opacity))
-                }
+                // Строка выглядит как обычная, ниже добавляются быстрые действия — высота меняется один раз
+                TaskMeta(row: row, showList: showList, hidesTodayDate: hidesTodayDate, hidesPlannedDay: hidesPlannedDay, board: board)
+                QuickActions(row: row, board: board)
+                    .padding(.top, 5)
             }
-            .clipped()
         }
-        .onAppear {
-            title = row.task.title
-            focused = true
-            withAnimation(.snappy) { showsActions = true }
-        }
+        .onAppear { focused = true }
         .onChange(of: focused) { _, isFocused in if !isFocused { save() } }
         .onDisappear { save() }
         .errorAlert(errors)
@@ -65,13 +85,16 @@ struct ExpandedTaskRow: View {
     }
 }
 
-/// Быстрые действия под раскрытой задачей: приоритет, срок, дедлайн, длительность, список, тег.
+/// Быстрые действия под раскрытой задачей: приоритет, срок, дедлайн, длительность, список, тег, блокеры, заметка.
 /// На кнопках — текущее значение; пустые приглушены.
 struct QuickActions: View {
     let row: TaskRow
     let board: Board
     @Environment(\.database) private var database
     @State private var picking: DateKind?
+    @State private var pickingBlocker = false
+    @State private var blockerReason: String?
+    @State private var editingNotes = false
     @State private var errors = ErrorAlert()
 
     private enum DateKind: Identifiable {
@@ -118,8 +141,28 @@ struct QuickActions: View {
                     }
                 }
 
+                blockersMenu
+
+                Button { editingNotes = true } label: {
+                    chip("Заметка", icon: "note.text", isSet: !row.task.notes.isEmpty)
+                }
+                .buttonStyle(.plain)
             }
             .tint(.primary) // не цветом списка
+        }
+        .sheet(isPresented: $pickingBlocker) {
+            BlockerPicker(taskId: row.id, board: board) { blocking in
+                errors.run { try database.addBlocker(task: row.id, blockingTask: blocking) }
+            }
+        }
+        .sheet(isPresented: $editingNotes) { NotesSheet(task: row.task) }
+        .alert("Чем заблокировано", isPresented: Binding(get: { blockerReason != nil }, set: { if !$0 { blockerReason = nil } })) {
+            TextField("Причина", text: Binding(get: { blockerReason ?? "" }, set: { blockerReason = $0 }))
+            Button("Добавить") {
+                let reason = (blockerReason ?? "").trimmingCharacters(in: .whitespaces)
+                if !reason.isEmpty { errors.run { try database.addBlocker(task: row.id, reason: reason) } }
+            }
+            Button("Отмена", role: .cancel) {}
         }
         .sheet(item: $picking) { kind in
             DayPickerSheet(title: kind == .planned ? "Срок" : "Дедлайн",
@@ -128,6 +171,29 @@ struct QuickActions: View {
             }
         }
         .errorAlert(errors)
+    }
+
+    /// Активные блокеры — каждый можно снять или удалить; ниже — добавить задачей или причиной.
+    private var blockersMenu: some View {
+        let active = row.blockers.filter(\.isActive)
+        return Menu {
+            ForEach(active) { blocker in
+                let title = blocker.blockingTaskId.map { board.row($0)?.task.title ?? "Задача удалена" } ?? blocker.reason ?? ""
+                Menu(title) {
+                    // Блокер-задача снимается сама, когда её выполнят
+                    if blocker.reason != nil {
+                        Button("Снять", systemImage: "lock.open") { errors.run { try database.resolveBlocker(blocker.id) } }
+                    }
+                    Button("Удалить", systemImage: "trash", role: .destructive) { errors.run { try database.deleteBlocker(blocker.id) } }
+                }
+            }
+            Section {
+                Button("Задачей…", systemImage: "link") { pickingBlocker = true }
+                Button("Причиной…", systemImage: "text.alignleft") { blockerReason = "" }
+            }
+        } label: {
+            chip(active.isEmpty ? "Блокер" : "\(active.count)", icon: "lock", isSet: !active.isEmpty)
+        }
     }
 
     private func dateMenu(_ kind: DateKind, title: String, icon: String, day: String?, set: @escaping (String?) -> Void) -> some View {
@@ -156,6 +222,37 @@ struct QuickActions: View {
 
     private func assign(_ assignment: AppDatabase.Assignment) {
         errors.run { try database.assign(assignment, to: row.id) }
+    }
+}
+
+/// Заметка задачи на весь экран: сохраняется по «Готово».
+private struct NotesSheet: View {
+    let task: TaskItem
+    @Environment(\.database) private var database
+    @Environment(\.dismiss) private var dismiss
+    @State private var notes = ""
+    @State private var errors = ErrorAlert()
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $notes)
+                .padding(.horizontal)
+                .navigationTitle("Заметка")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Отмена") { dismiss() } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Готово") {
+                            var updated = task
+                            updated.notes = notes
+                            errors.run { _ = try database.saveTask(updated) }
+                            dismiss()
+                        }
+                    }
+                }
+        }
+        .onAppear { notes = task.notes }
+        .errorAlert(errors)
     }
 }
 

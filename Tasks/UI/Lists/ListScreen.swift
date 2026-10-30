@@ -24,50 +24,22 @@ struct ListScreen: View {
         let list = board.list(listId)
         let mode = list?.sortMode ?? .manual
         let open = TaskOrdering.sorted(board.rows(in: listId, done: false), by: mode)
-        TaskScroll {
-            let load = Workload(open)
-            if !load.summary.isEmpty {
-                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
-            }
-            group(open.filter { $0.task.sectionId == nil }, section: nil, all: open)
-            newRow(NewTaskTarget(), list: list)
-            ForEach(board.sections(of: listId)) { section in
-                let rows = open.filter { $0.task.sectionId == section.id }
-                let collapsed = collapsedIds.contains(section.id.uuidString)
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack {
-                        Button {
-                            withAnimation { toggle(section.id) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.right")
-                                    .font(.caption.bold())
-                                    .rotationEffect(.degrees(collapsed ? 0 : 90))
-                                Text(section.name).font(.title3.bold())
-                                if collapsed && !rows.isEmpty { Text("\(rows.count)").foregroundStyle(.secondary) }
-                            }
-                            .foregroundStyle(.primary)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        Spacer()
-                        Button("Добавить", systemImage: "plus") { add(NewTaskTarget(sectionId: section.id)) }
-                            .labelStyle(.iconOnly)
-                    }
-                    .padding(.top, 18)
-                    .padding(.bottom, 6)
-                    // Бросок на заголовок — в конец раздела
-                    .dropDestination(for: String.self) { items, _ in
-                        place(items, before: nil, section: section.id, all: open)
-                    }
-                    if !collapsed { group(rows, section: section.id, all: open) }
-                    newRow(NewTaskTarget(sectionId: section.id), list: list)
+        // Тап под задачами — новая задача без раздела; ещё тап — закончить ввод
+        TaskCollection(items: items(open: open, list: list), board: board,
+                       onEmptyTap: { adding == nil ? add(NewTaskTarget()) : (adding = nil) }) { payload, previous, next in
+            drop(payload, previous: previous, next: next, open: open)
+        }
+        .overlay {
+            // Пустой Inbox — цель «Пути джедая», заслуживает поздравления
+            if list?.isInbox == true && open.isEmpty && adding == nil && !showDone {
+                ContentUnavailableView {
+                    Label("Inbox пуст", systemImage: "sparkles")
+                        .symbolRenderingMode(.multicolor)
+                        .symbolEffect(.bounce, options: .nonRepeating)
+                } description: {
+                    Text("Всё разобрано. Можно выдохнуть ☕️")
                 }
-            }
-            if showDone {
-                let done = board.rows(in: listId, done: true).sorted { ($0.task.completedAt ?? .distantPast) > ($1.task.completedAt ?? .distantPast) }
-                Text("Выполненные").font(.title3.bold()).padding(.top, 18).padding(.bottom, 6)
-                group(done, section: nil, all: [], movable: false)
+                .allowsHitTesting(false)
             }
         }
         .navigationTitle(list?.name ?? "")
@@ -102,28 +74,85 @@ struct ListScreen: View {
         adding = target
     }
 
-    @ViewBuilder
-    private func newRow(_ target: NewTaskTarget, list: TaskList?) -> some View {
-        if adding == target {
+    /// Лента: сводка, задачи без раздела, разделы со своими задачами, выполненные.
+    private func items(open: [TaskRow], list: TaskList?) -> [TaskCollectionItem] {
+        var items: [TaskCollectionItem] = []
+        let load = Workload(open)
+        if !load.summary.isEmpty {
+            items.append(.view(id: "summary", AnyView(
+                Text(load.summary).font(.subheadline).foregroundStyle(.secondary).padding(.vertical, 8)
+            )))
+        }
+        items += open.filter { $0.task.sectionId == nil }.map { .task($0) }
+        items += newRow(NewTaskTarget(), list: list)
+        for section in board.sections(of: listId) {
+            let rows = open.filter { $0.task.sectionId == section.id }
+            let collapsed = collapsedIds.contains(section.id.uuidString)
+            items.append(.view(id: "section:" + section.id.uuidString, AnyView(sectionHeader(section, count: rows.count, collapsed: collapsed))))
+            if !collapsed { items += rows.map { .task($0) } }
+            items += newRow(NewTaskTarget(sectionId: section.id), list: list)
+        }
+        if showDone {
+            let done = board.rows(in: listId, done: true).sorted { ($0.task.completedAt ?? .distantPast) > ($1.task.completedAt ?? .distantPast) }
+            items.append(.view(id: "done", AnyView(
+                Text("Выполненные").font(.title3.bold()).padding(.top, 18).padding(.bottom, 6)
+            )))
+            items += done.map { .task($0) }
+        }
+        return items
+    }
+
+    private func sectionHeader(_ section: ListSection, count: Int, collapsed: Bool) -> some View {
+        HStack {
+            Button {
+                withAnimation { toggle(section.id) }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.bold())
+                        .rotationEffect(.degrees(collapsed ? 0 : 90))
+                    Text(section.name).font(.title3.bold())
+                    if collapsed && count > 0 { Text("\(count)").foregroundStyle(.secondary) }
+                }
+                .foregroundStyle(.primary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            Button("Добавить", systemImage: "plus") { add(NewTaskTarget(sectionId: section.id)) }
+                .labelStyle(.iconOnly)
+        }
+        .padding(.top, 18)
+        .padding(.bottom, 6)
+    }
+
+    private func newRow(_ target: NewTaskTarget, list: TaskList?) -> [TaskCollectionItem] {
+        guard adding == target else { return [] }
+        return [.view(id: "new:" + (target.sectionId?.uuidString ?? ""), AnyView(
             NewTaskRow(colorHex: list?.colorHex ?? TaskList.palette[0]) { title in
                 errors.run { try database.addTask(title: title, listId: listId, sectionId: target.sectionId) }
             } onEnd: {
                 if adding == target { adding = nil }
             }
-        }
+        ))]
     }
 
-    /// Строки группы. Задачу можно бросить на другую — встанет перед ней (и в её раздел).
-    @ViewBuilder
-    private func group(_ rows: [TaskRow], section: UUID?, all: [TaskRow], movable: Bool = true) -> some View {
-        ForEach(rows) { row in
-            TaskLink(id: row.id) { TaskRowView(row: row, board: board) }
-                .padding(.vertical, 6)
-                // Бросок на задачу — встать перед ней (и в её раздел)
-                .dropDestination(for: String.self) { items, _ in
-                    movable && place(items, before: row.id, section: section, all: all)
-                }
+    /// Бросок между элементами ленты: перед задачей — в её раздел; иначе — в конец раздела выше.
+    private func drop(_ payload: [String], previous: String?, next: String?, open: [TaskRow]) -> Bool {
+        if let next, let id = TaskCollectionItem.taskId(of: next), let row = open.first(where: { $0.id == id }) {
+            return place(payload, before: id, section: row.task.sectionId, all: open)
         }
+        guard previous != "done" else { return false }
+        let section: UUID?
+        if let previous, let id = TaskCollectionItem.taskId(of: previous) {
+            guard let row = open.first(where: { $0.id == id }) else { return false } // среди выполненных
+            section = row.task.sectionId
+        } else if let previous, previous.hasPrefix("section:") || previous.hasPrefix("new:") {
+            section = UUID(uuidString: String(previous.split(separator: ":", maxSplits: 1).last ?? ""))
+        } else {
+            section = nil
+        }
+        return place(payload, before: nil, section: section, all: open)
     }
 
     /// Переставляет брошенные задачи перед `target` (или в конец раздела) в видимом порядке списка.
@@ -143,8 +172,21 @@ struct ListScreen: View {
             let next = all.first { row in rest.contains(row.task.sectionId) && !moved.contains(row.id) }?.id
             index = next.flatMap { order.firstIndex(of: $0) } ?? order.count
         }
+        // Соседи — только из того же раздела: у разных разделов ручные порядки не связаны
+        let sectionOf = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.task.sectionId) })
+        let after = index > 0 ? order[index - 1] : nil
+        let before = index < order.count ? order[index] : nil
         order.insert(contentsOf: moved, at: index)
-        errors.run { try database.arrange(list: listId, order: order, moved: moved, section: section) }
+        errors.run {
+            // В ручной сортировке — только перемещённые задачи; иначе видимый порядок становится ручным целиком
+            let manual = board.list(listId)?.sortMode == .manual
+            let placed = try manual && database.insert(
+                moved,
+                after: after.flatMap { sectionOf[$0] == section ? $0 : nil },
+                before: before.flatMap { sectionOf[$0] == section ? $0 : nil }
+            ) { $0.listId = listId; $0.sectionId = section }
+            if !placed { try database.arrange(list: listId, order: order, moved: moved, section: section) }
+        }
         return true
     }
 }

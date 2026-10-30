@@ -26,9 +26,12 @@ struct SidebarRoot: View {
                 ToolbarItem(placement: .primaryAction) {
                     Button("Новый список", systemImage: "text.badge.plus") { editing = TaskList(name: "") }
                 }
+                #if !targetEnvironment(macCatalyst)
+                // На Mac настройки — через меню приложения и Cmd+,
                 ToolbarItem(placement: .bottomBar) {
-                    Button("Настройки", systemImage: "gearshape") { query = ""; selection = .settings }
+                    Button("Настройки", systemImage: "gearshape") { openSettings() }
                 }
+                #endif
             }
         } detail: {
             NavigationStack {
@@ -45,12 +48,52 @@ struct SidebarRoot: View {
                 }
             }
             .id(selection)
+            #if targetEnvironment(macCatalyst)
+            .toolbar { ToolbarItem(placement: .primaryAction) { MacSearchField(query: $query) } }
+            #endif
         }
+        #if !targetEnvironment(macCatalyst)
         .searchable(text: $query, placement: .toolbar, prompt: "Поиск")
+        #endif
+        .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in openSettings() }
         .sheet(item: $editing) { ListEditSheet(list: $0) }
         .observingBoard($board, in: database)
         .errorAlert(errors)
         .modifier(UnifiedTitlebar())
+    }
+
+    private func openSettings() {
+        query = ""
+        selection = .settings
+    }
+}
+
+extension Notification.Name {
+    /// Команда «Настройки…» из меню приложения (Cmd+,).
+    static let openSettings = Notification.Name("openSettings")
+}
+
+/// Поиск в шапке Mac. Своё поле, а не `.searchable`: системная строка поиска на Mac перехватывала фокус
+/// у текстовых полей экрана — клик в поле задачи уводил курсор в поиск.
+private struct MacSearchField: View {
+    @Binding var query: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("Поиск", text: $query)
+                .textFieldStyle(.plain)
+            if !query.isEmpty {
+                Button("Очистить", systemImage: "xmark.circle.fill") { query = "" }
+                    .labelStyle(.iconOnly)
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(width: 200)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 7))
     }
 }
 
@@ -62,14 +105,7 @@ struct SearchScreen: View {
 
     var body: some View {
         let rows = board.search(query)
-        TaskScroll {
-            ForEach(rows) { row in
-                TaskLink(id: row.id) {
-                    TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
-                }
-                .padding(.vertical, 6)
-            }
-        }
+        TaskCollection(items: rows.map { .task($0, showList: board.list($0.task.listId)?.name) }, board: board)
         .overlay { if rows.isEmpty { ContentUnavailableView.search(text: query) } }
         .navigationTitle("Поиск")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
