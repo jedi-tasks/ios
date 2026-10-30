@@ -230,7 +230,7 @@ private struct BlockerRow: View {
 }
 
 /// Выбор задачи-блокера: списки → задачи по разделам. Поиск — сразу по всем спискам.
-private struct BlockerPicker: View {
+struct BlockerPicker: View {
     let taskId: UUID
     let board: Board
     let onPick: (UUID) -> Void

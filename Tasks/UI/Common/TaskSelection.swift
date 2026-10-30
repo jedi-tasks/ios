@@ -147,6 +147,7 @@ struct TaskScroll<Content: View>: View {
                 .padding(.horizontal, 16)
                 .onGeometryChange(for: CGFloat.self) { $0.frame(in: .named(Self.space)).maxY } action: { contentBottom = $0 }
                 .padding(.bottom, 80)
+                .background(SingleFingerScroll())
                 .gesture(TwoFingerSelect { point in
                     guard let selection, let id = selection.row(at: point) else { return }
                     if !selection.isSelecting {
@@ -177,6 +178,24 @@ private struct RowTap: UIGestureRecognizerRepresentable {
 
     func handleUIGestureRecognizerAction(_ recognizer: UITapGestureRecognizer, context: Context) {
         if recognizer.state == .ended { onTap(recognizer.modifierFlags.contains(.command)) }
+    }
+}
+
+/// Лента листается только одним пальцем: два пальца — выбор задач, иначе лента уезжает из-под пальцев.
+/// Выключить прокрутку на время жеста не выходит — она успевает начаться раньше, поэтому ограничиваем её заранее.
+private struct SingleFingerScroll: UIViewRepresentable {
+    func makeUIView(context: Context) -> Probe { Probe() }
+    func updateUIView(_ view: Probe, context: Context) {}
+
+    final class Probe: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            // На Mac трекпад листает тем же распознавателем — там не трогаем
+            #if !targetEnvironment(macCatalyst)
+            let scroll = sequence(first: superview, next: { $0?.superview }).compactMap { $0 as? UIScrollView }.first
+            scroll?.panGestureRecognizer.maximumNumberOfTouches = 1
+            #endif
+        }
     }
 }
 
@@ -217,7 +236,7 @@ private struct HorizontalSwipe: UIGestureRecognizerRepresentable {
     }
 }
 
-/// Протяжка двумя пальцами. Пока она идёт, прокрутка выключена — иначе лента уезжает из-под пальцев.
+/// Протяжка двумя пальцами.
 private struct TwoFingerSelect: UIGestureRecognizerRepresentable {
     /// Точка в координатах ленты, над которой сейчас пальцы.
     let onMove: (CGPoint) -> Void
@@ -233,15 +252,8 @@ private struct TwoFingerSelect: UIGestureRecognizerRepresentable {
     }
 
     func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        let scroll = sequence(first: recognizer.view, next: { $0?.superview }).compactMap { $0 as? UIScrollView }.first
-        switch recognizer.state {
-        case .began:
-            scroll?.panGestureRecognizer.isEnabled = false
+        if recognizer.state == .began || recognizer.state == .changed {
             onMove(context.converter.location(in: .named(TaskScroll<EmptyView>.space)))
-        case .changed:
-            onMove(context.converter.location(in: .named(TaskScroll<EmptyView>.space)))
-        default:
-            scroll?.panGestureRecognizer.isEnabled = true
         }
     }
 
