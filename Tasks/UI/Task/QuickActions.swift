@@ -32,6 +32,13 @@ struct ExpandedTaskRow: View {
                             save()
                             onCollapse()
                         }
+                        // Многострочное поле на iPhone вставляет перенос вместо onSubmit — считаем его «Готово»
+                        .onChange(of: title) {
+                            guard title.contains(where: \.isNewline) else { return }
+                            title = title.filter { !$0.isNewline }
+                            save()
+                            onCollapse()
+                        }
                     NavigationLink(value: row.id) {
                         Image(systemName: "info.circle").font(.title3)
                     }

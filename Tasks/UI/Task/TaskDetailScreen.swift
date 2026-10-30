@@ -35,6 +35,8 @@ struct TaskDetailScreen: View {
         .errorAlert(errors)
     }
 
+    @FocusState private var titleFocused: Bool
+
     private func binding<T>(_ keyPath: WritableKeyPath<TaskItem, T>) -> Binding<T> {
         Binding(
             get: { draft![keyPath: keyPath] },
@@ -68,7 +70,18 @@ struct TaskDetailScreen: View {
                         CheckCircle(done: draft!.completedAt != nil)
                     }
                     .buttonStyle(.plain)
-                    TextField("Название", text: binding(\.title), axis: .vertical).font(.headline)
+                    // Перенос строки в названии не нужен: Return закрывает клавиатуру
+                    TextField("Название", text: Binding(
+                        get: { draft!.title },
+                        set: { value in
+                            draft!.title = value.filter { !$0.isNewline }
+                            save()
+                            if value.contains(where: \.isNewline) { titleFocused = false }
+                        }
+                    ), axis: .vertical)
+                    .font(.headline)
+                    .focused($titleFocused)
+                    .submitLabel(.done)
                 }
             }
 
