@@ -7,6 +7,17 @@ struct TasksApp: App {
 
     init() {
         do {
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-demo") {
+                let database = try AppDatabase.makeInMemory()
+                try database.seedDemo()
+                let sync = SyncEngine(database: database)
+                sync.startDemo()
+                self.database = database
+                _sync = State(initialValue: sync)
+                return
+            }
+            #endif
             let database = try AppDatabase.makeShared()
             self.database = database
             _sync = State(initialValue: SyncEngine(database: database))

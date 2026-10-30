@@ -7,6 +7,7 @@ struct ExpandedTaskRow: View {
     let board: Board
     let onCollapse: () -> Void
     @Environment(\.database) private var database
+    @Environment(\.openTask) private var openTask
     @State private var title = ""
     @FocusState private var focused: Bool
     @State private var showsActions = false
@@ -39,8 +40,12 @@ struct ExpandedTaskRow: View {
                             save()
                             onCollapse()
                         }
-                    NavigationLink(value: row.id) {
-                        Image(systemName: "info.circle").font(.title3)
+                    Group {
+                        if let openTask {
+                            Button { openTask(row.id) } label: { Image(systemName: "info.circle").font(.title3) }
+                        } else {
+                            NavigationLink(value: row.id) { Image(systemName: "info.circle").font(.title3) }
+                        }
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.tint)

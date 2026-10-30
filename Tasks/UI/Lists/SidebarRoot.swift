@@ -105,13 +105,7 @@ struct SearchScreen: View {
 
     var body: some View {
         let rows = board.search(query)
-        TaskScroll {
-            ForEach(rows) { row in
-                TaskLink(id: row.id) {
-                    TaskRowView(row: row, showList: board.list(row.task.listId)?.name, board: board)
-                }
-            }
-        }
+        TaskCollection(items: rows.map { .task($0, showList: board.list($0.task.listId)?.name) }, board: board)
         .overlay { if rows.isEmpty { ContentUnavailableView.search(text: query) } }
         .navigationTitle("Поиск")
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }

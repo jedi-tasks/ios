@@ -18,12 +18,9 @@ struct TaskRowView: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
-            // Тот же кружок в режиме выбора отмечает задачу
+            // В режиме выбора кружок — отметка; отмечает тап по строке целиком
             if let selection, selection.isSelecting {
-                Button { selection.toggle(row.id) } label: {
-                    CheckCircle(done: selection.selected.contains(row.id), selectedStyle: true)
-                }
-                .buttonStyle(.plain)
+                CheckCircle(done: selection.selected.contains(row.id), selectedStyle: true)
             } else {
                 Button {
                     errors.run { try database.setCompleted(row.id, !row.isDone) }
