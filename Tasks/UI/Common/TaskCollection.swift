@@ -134,7 +134,10 @@ private struct Representable: UIViewControllerRepresentable {
             let old = Set(dataSource.snapshot().itemIdentifiers)
             // Строку ввода не перерисовываем: новая конфигурация ячейки сбрасывает фокус в её поле
             snapshot.reconfigureItems(order.filter { old.contains($0) && !$0.hasPrefix("new") })
-            dataSource.apply(snapshot, animatingDifferences: animated && !old.isEmpty)
+            // Состав и порядок прежние (раскрытие, правка) — без анимации: иначе содержимое ячейки
+            // анимировалось из старой рамки и название «прилетало» сверху
+            let moved = dataSource.snapshot().itemIdentifiers != order
+            dataSource.apply(snapshot, animatingDifferences: animated && moved && !old.isEmpty)
             syncSelection(collection)
         }
 

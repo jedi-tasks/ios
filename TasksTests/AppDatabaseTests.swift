@@ -11,6 +11,20 @@ struct AppDatabaseTests {
         #expect(board.priorities.map(\.name).first == "1 — ближайшие дни")
     }
 
+    @Test func insertMovesOnlyMovedTaskBetweenNeighbours() throws {
+        let a = try db.addTask(title: "A", listId: nil)
+        let b = try db.addTask(title: "B", listId: nil)
+        let c = try db.addTask(title: "C", listId: nil)
+        // C — между A и B, соседи не меняются
+        #expect(try db.insert([c.id], after: a.id, before: b.id))
+        let rows = try db.board().rows
+        let order = { (id: UUID) in rows.first { $0.id == id }!.task.manualOrder }
+        #expect(order(a.id) == a.manualOrder && order(b.id) == b.manualOrder)
+        #expect(order(a.id) < order(c.id) && order(c.id) < order(b.id))
+        // Соседи не по порядку — места нет, нужна перенумерация
+        #expect(try !db.insert([c.id], after: b.id, before: a.id))
+    }
+
     @Test func taskWithoutListGoesToInbox() throws {
         let task = try db.addTask(title: "Зарядить фонарь", listId: nil)
         #expect(task.listId == (try db.board().inbox?.id))

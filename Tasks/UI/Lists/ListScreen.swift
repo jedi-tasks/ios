@@ -172,8 +172,21 @@ struct ListScreen: View {
             let next = all.first { row in rest.contains(row.task.sectionId) && !moved.contains(row.id) }?.id
             index = next.flatMap { order.firstIndex(of: $0) } ?? order.count
         }
+        // Соседи — только из того же раздела: у разных разделов ручные порядки не связаны
+        let sectionOf = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0.task.sectionId) })
+        let after = index > 0 ? order[index - 1] : nil
+        let before = index < order.count ? order[index] : nil
         order.insert(contentsOf: moved, at: index)
-        errors.run { try database.arrange(list: listId, order: order, moved: moved, section: section) }
+        errors.run {
+            // В ручной сортировке — только перемещённые задачи; иначе видимый порядок становится ручным целиком
+            let manual = board.list(listId)?.sortMode == .manual
+            let placed = try manual && database.insert(
+                moved,
+                after: after.flatMap { sectionOf[$0] == section ? $0 : nil },
+                before: before.flatMap { sectionOf[$0] == section ? $0 : nil }
+            ) { $0.listId = listId; $0.sectionId = section }
+            if !placed { try database.arrange(list: listId, order: order, moved: moved, section: section) }
+        }
         return true
     }
 }

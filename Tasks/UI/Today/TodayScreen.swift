@@ -59,8 +59,15 @@ struct TodayScreen: View {
         let moved = items.flatMap(DragPayload.taskIds).filter { $0 != target && ids.contains($0) }
         guard !moved.isEmpty else { return false }
         var order = ids.filter { !moved.contains($0) }
-        order.insert(contentsOf: moved, at: target.flatMap { order.firstIndex(of: $0) } ?? order.count)
-        errors.run { try database.permuteOrder(order) }
+        let index = target.flatMap { order.firstIndex(of: $0) } ?? order.count
+        let after = index > 0 ? order[index - 1] : nil
+        let before = index < order.count ? order[index] : nil
+        order.insert(contentsOf: moved, at: index)
+        errors.run {
+            // В ручном порядке — только перемещённые задачи между соседями; иначе видимый порядок фиксируется целиком
+            let placed = try mode == .manual && database.insert(moved, after: after, before: before)
+            if !placed { try database.permuteOrder(order) }
+        }
         mode = .manual
         return true
     }
