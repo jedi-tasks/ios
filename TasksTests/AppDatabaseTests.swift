@@ -30,6 +30,16 @@ struct AppDatabaseTests {
         #expect(task.listId == (try db.board().inbox?.id))
     }
 
+    @Test func quickActionsChosenOnCreationApplyToTask() throws {
+        let priority = try db.board().priorities.first!
+        let task = try db.addTask(title: "A", listId: nil, plannedDay: "2026-11-03",
+                                  applying: [.priority(priority.id), .duration(30), .plannedDay("2026-11-04")])
+        let saved = try db.board().rows.first { $0.id == task.id }!.task
+        #expect(saved.priorityId == priority.id)
+        #expect(saved.durationMinutes == 30)
+        #expect(saved.plannedDay == "2026-11-04")
+    }
+
     @Test func completingBlockingTaskResolvesBlocker() throws {
         let first = try db.addTask(title: "A", listId: nil)
         let second = try db.addTask(title: "B", listId: nil)

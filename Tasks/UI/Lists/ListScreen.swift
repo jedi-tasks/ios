@@ -30,16 +30,13 @@ struct ListScreen: View {
             drop(payload, previous: previous, next: next, open: open)
         }
         .overlay {
-            // Пустой Inbox — цель «Пути джедая», заслуживает поздравления
-            if list?.isInbox == true && open.isEmpty && adding == nil && !showDone {
-                ContentUnavailableView {
-                    Label("Inbox пуст", systemImage: "sparkles")
-                        .symbolRenderingMode(.multicolor)
-                        .symbolEffect(.bounce, options: .nonRepeating)
-                } description: {
-                    Text("Всё разобрано. Можно выдохнуть ☕️")
+            // Пустой список заслуживает поздравления, а Inbox — цель «Пути джедая»
+            if let list, open.isEmpty && adding == nil && !showDone {
+                if list.isInbox {
+                    AllDoneView(title: "Inbox пуст", message: "Всё разобрано. Можно выдохнуть ☕️")
+                } else {
+                    AllDoneView(title: "Всё сделано", message: "В этом списке больше нет задач ☕️")
                 }
-                .allowsHitTesting(false)
             }
         }
         .navigationTitle(list?.name ?? "")
@@ -129,8 +126,8 @@ struct ListScreen: View {
     private func newRow(_ target: NewTaskTarget, list: TaskList?) -> [TaskCollectionItem] {
         guard adding == target else { return [] }
         return [.view(id: "new:" + (target.sectionId?.uuidString ?? ""), AnyView(
-            NewTaskRow(colorHex: list?.colorHex ?? TaskList.palette[0]) { title in
-                errors.run { try database.addTask(title: title, listId: listId, sectionId: target.sectionId) }
+            NewTaskRow(board: board, listId: listId, sectionId: target.sectionId) { title, actions in
+                errors.run { try database.addTask(title: title, listId: listId, sectionId: target.sectionId, applying: actions) }
             } onEnd: {
                 if adding == target { adding = nil }
             }

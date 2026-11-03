@@ -58,8 +58,8 @@ struct PlannedScreen: View {
             if addingDay == plan.day {
                 let id = "new:" + plan.day
                 items.append(.view(id: id, AnyView(
-                    NewTaskRow(colorHex: board.inbox?.colorHex ?? TaskList.palette[0]) { title in
-                        errors.run { try database.addTask(title: title, listId: nil, plannedDay: plan.day) }
+                    NewTaskRow(board: board, plannedDay: plan.day) { title, actions in
+                        errors.run { try database.addTask(title: title, listId: nil, plannedDay: plan.day, applying: actions) }
                     } onEnd: {
                         if addingDay == plan.day { addingDay = nil }
                     }

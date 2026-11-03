@@ -43,8 +43,8 @@ struct TodayScreen: View {
         // Новая задача из «Сегодня» — в Inbox со сроком на сегодня
         if adding {
             items.append(.view(id: "new", AnyView(
-                NewTaskRow(colorHex: board.inbox?.colorHex ?? TaskList.palette[0]) { title in
-                    errors.run { try database.addTask(title: title, listId: nil, plannedDay: today) }
+                NewTaskRow(board: board, plannedDay: today) { title, actions in
+                    errors.run { try database.addTask(title: title, listId: nil, plannedDay: today, applying: actions) }
                 } onEnd: {
                     adding = false
                 }
