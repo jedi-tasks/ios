@@ -4,6 +4,8 @@ import SwiftUI
 /// На Mac шапка как у Напоминаний: над панелью — «Новый список», справа — «+» экрана и поиск.
 struct SidebarRoot: View {
     @Environment(\.database) private var database
+    /// Список, который просит открыть виджет.
+    @Binding var openedList: UUID?
     @State private var board = Board()
     @State private var selection: SidebarItem? = .today
     @State private var editing: TaskList?
@@ -56,6 +58,12 @@ struct SidebarRoot: View {
         .searchable(text: $query, placement: .toolbar, prompt: "Поиск")
         #endif
         .onReceive(NotificationCenter.default.publisher(for: .openSettings)) { _ in openSettings() }
+        .onChange(of: openedList, initial: true) {
+            guard let id = openedList else { return }
+            openedList = nil
+            query = ""
+            selection = .list(id)
+        }
         .sheet(item: $editing) { ListEditSheet(list: $0) }
         .observingBoard($board, in: database)
         .errorAlert(errors)
