@@ -3,7 +3,13 @@ import Foundation
 /// Снимок невыполненных задач для виджета. Базу и её миграции виджет не трогает: приложение пишет этот файл
 /// в общий контейнер App Group. Порядки посчитаны заранее, поэтому правила сортировки живут только в `TaskOrdering`.
 struct WidgetSnapshot: Codable, Equatable, Sendable {
+    /// На Mac группа `group.*` требует разрешения в профиле, а профиль Catalyst его не содержит:
+    /// виджет не получает доступа к контейнеру. Группе с префиксом команды профиль не нужен.
+    #if targetEnvironment(macCatalyst)
+    static let appGroup = "235DAB995B.iliaIvanov.tasks"
+    #else
     static let appGroup = "group.iliaIvanov.tasks"
+    #endif
     /// `kind` виджета — по нему приложение просит обновить таймлайны.
     static let widgetKind = "TaskListWidget"
 
@@ -15,6 +21,11 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         var plannedDay: String?
         var deadlineDay: String?
         var isBlocked: Bool
+
+        /// Попадает ли задача в «Сегодня»: планируемый срок или дедлайн не позже этого дня.
+        func isDue(on day: String) -> Bool {
+            (plannedDay.map { $0 <= day } ?? false) || (deadlineDay.map { $0 <= day } ?? false)
+        }
     }
 
     struct List: Codable, Equatable, Identifiable, Sendable {
@@ -36,7 +47,12 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         }
     }
 
+    /// Id пункта «Сегодня» в настройках виджета и ссылках.
+    static let todayId = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
     var lists: [List] = []
+    /// Все невыполненные задачи со сроком. Отбор по дате делает виджет при отрисовке, чтобы в полночь список сменился сам.
+    var today: List?
 
     var inbox: List? { lists.first(where: \.isInbox) }
 

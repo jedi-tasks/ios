@@ -62,7 +62,7 @@ struct SidebarRoot: View {
             guard let id = openedList else { return }
             openedList = nil
             query = ""
-            selection = .list(id)
+            selection = id == WidgetSnapshot.todayId ? .today : .list(id)
         }
         .sheet(item: $editing) { ListEditSheet(list: $0) }
         .observingBoard($board, in: database)

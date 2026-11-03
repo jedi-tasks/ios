@@ -15,22 +15,39 @@ extension WidgetSnapshot {
                 icon: list.icon,
                 isInbox: list.isInbox,
                 sortMode: list.sortMode.rawValue,
-                tasks: rows.map { row in
-                    Task(
-                        id: row.id,
-                        title: row.task.title,
-                        priorityMarks: row.priority?.marks,
-                        priorityColorHex: row.priority?.colorHex,
-                        plannedDay: row.task.plannedDay,
-                        deadlineDay: row.task.deadlineDay,
-                        isBlocked: row.isBlocked
-                    )
-                },
+                tasks: rows.map(Self.task),
                 orders: Dictionary(uniqueKeysWithValues: SortMode.allCases.map { mode in
                     (mode.rawValue, TaskOrdering.sorted(rows, by: mode).map(\.id))
                 })
             )
         }
+        let dated = board.rows.filter { !$0.isDone && ($0.task.plannedDay != nil || $0.task.deadlineDay != nil) }
+        today = List(
+            id: Self.todayId,
+            name: "Сегодня",
+            colorHex: "#3E9BF0",
+            icon: "sun.max.fill",
+            isInbox: false,
+            sortMode: SortMode.priority.rawValue,
+            tasks: dated.map(Self.task),
+            orders: Dictionary(uniqueKeysWithValues: SortMode.allCases.map { mode in
+                (mode.rawValue, TaskOrdering.sorted(dated, by: mode, blockedLast: true).map(\.id))
+            })
+        )
+    }
+}
+
+private extension WidgetSnapshot {
+    static func task(_ row: TaskRow) -> Task {
+        Task(
+            id: row.id,
+            title: row.task.title,
+            priorityMarks: row.priority?.marks,
+            priorityColorHex: row.priority?.colorHex,
+            plannedDay: row.task.plannedDay,
+            deadlineDay: row.task.deadlineDay,
+            isBlocked: row.isBlocked
+        )
     }
 }
 
