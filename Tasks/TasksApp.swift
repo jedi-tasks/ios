@@ -44,46 +44,87 @@ struct TasksApp: App {
 
 /// Без входа — экран входа. iPhone — таббар; iPad и Mac — боковая панель со списками, как в Напоминаниях.
 struct RootView: View {
+    @Environment(\.database) private var database
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.scenePhase) private var scenePhase
     @Environment(SyncEngine.self) private var sync
+    @State private var openedList: UUID?
+    @State private var openedTask: OpenedTask?
 
     var body: some View {
         Group {
             if !sync.isSignedIn {
                 LoginScreen()
             } else if sizeClass == .regular {
-                SidebarRoot()
+                SidebarRoot(openedList: $openedList)
             } else {
-                TabRoot()
+                TabRoot(openedList: $openedList)
             }
         }
         .onAppear { sync.start() }
         .onChange(of: scenePhase) { if scenePhase == .active { sync.schedule() } }
         .rejectedMutationsAlert(sync)
+        .task { await WidgetExport.run(database: database) }
+        .onOpenURL { url in
+            guard sync.isSignedIn else { return }
+            switch WidgetLink(url: url) {
+            case .list(let id): openedList = id
+            case .task(let id): openedTask = OpenedTask(id: id)
+            case nil: break
+            }
+        }
+        .sheet(item: $openedTask) { task in
+            NavigationStack { TaskDetailScreen(taskId: task.id) }
+        }
     }
 }
 
+/// Задача, открытая по ссылке из виджета.
+private struct OpenedTask: Identifiable {
+    let id: UUID
+}
+
 struct TabRoot: View {
+    private enum Tab { case today, planned, inbox, lists, settings }
+
     @Environment(\.database) private var database
+    /// Список, который просит открыть виджет.
+    @Binding var openedList: UUID?
     @State private var board = Board()
+    @State private var tab = Tab.today
+    @State private var listsOpened: SidebarItem?
 
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             NavigationStack { TodayScreen() }
                 .tabItem { Label("Сегодня", systemImage: "sun.max") }
+                .tag(Tab.today)
             NavigationStack { PlannedScreen() }
                 .tabItem { Label("В планах", systemImage: "calendar") }
+                .tag(Tab.planned)
             NavigationStack {
                 if let inbox = board.inbox { ListScreen(listId: inbox.id) }
             }
             .tabItem { Label("Inbox", systemImage: "tray") }
             .badge(board.inbox.map { board.rows(in: $0.id, done: false).count } ?? 0)
-            NavigationStack { ListsScreen() }
+            .tag(Tab.inbox)
+            NavigationStack { ListsScreen(opened: $listsOpened) }
                 .tabItem { Label("Списки", systemImage: "list.bullet") }
+                .tag(Tab.lists)
             NavigationStack { SettingsScreen() }
                 .tabItem { Label("Настройки", systemImage: "gearshape") }
+                .tag(Tab.settings)
         }
         .observingBoard($board, in: database)
+        .onChange(of: openedList, initial: true) {
+            guard let id = openedList else { return }
+            openedList = nil
+            if id == board.inbox?.id {
+                tab = .inbox
+            } else {
+                listsOpened = .list(id)
+                tab = .lists
+            }
+        }
     }
 }

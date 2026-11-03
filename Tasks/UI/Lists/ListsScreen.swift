@@ -5,7 +5,7 @@ struct ListsScreen: View {
     @Environment(\.database) private var database
     @State private var board = Board()
     @State private var editing: TaskList?
-    @State private var opened: SidebarItem?
+    @Binding var opened: SidebarItem?
 
     var body: some View {
         ListsPanel(board: board, onOpen: { opened = $0 }, onEdit: { editing = $0 })

@@ -52,11 +52,6 @@ extension View {
 }
 
 extension Color {
-    init(hex: String) {
-        let value = Int(hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")), radix: 16) ?? 0x888888
-        self.init(red: Double((value >> 16) & 0xFF) / 255, green: Double((value >> 8) & 0xFF) / 255, blue: Double(value & 0xFF) / 255)
-    }
-
     var hex: String {
         let c = UIColor(self).cgColor.components ?? [0.5, 0.5, 0.5]
         let rgb = c.count >= 3 ? c : [c[0], c[0], c[0]]

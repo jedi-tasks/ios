@@ -344,3 +344,35 @@ struct SearchTests {
         #expect(try db.board().search("кофе").map(\.task.title) == ["Позвонить", "Купить кофе"])
     }
 }
+
+struct WidgetSnapshotTests {
+    @Test func ordersEveryModeAndSkipsDoneTasks() {
+        let list = TaskList(name: "Работа", sortMode: .deadline)
+        let high = Priority(name: "1", colorHex: "#FF0000", marks: "!!!", sortOrder: 0)
+        let late = TaskItem(listId: list.id, title: "Поздний", deadlineDay: "2026-12-01", manualOrder: 1)
+        let early = TaskItem(listId: list.id, title: "Ранний", priorityId: high.id, deadlineDay: "2026-11-01", manualOrder: 2)
+        var done = TaskItem(listId: list.id, title: "Готово", manualOrder: 0)
+        done.completedAt = Date()
+        let board = Board(lists: [list], priorities: [high], rows: [
+            TaskRow(task: done, tags: [], blockers: []),
+            TaskRow(task: late, tags: [], blockers: []),
+            TaskRow(task: early, priority: high, tags: [], blockers: []),
+        ])
+
+        let exported = WidgetSnapshot(board: board).lists[0]
+
+        #expect(exported.sortedTasks(by: "manual").map(\.title) == ["Поздний", "Ранний"])
+        #expect(exported.sortedTasks(by: "priority").map(\.title) == ["Ранний", "Поздний"])
+        // Без выбранного режима — режим самого списка
+        #expect(exported.sortedTasks(by: nil).map(\.title) == ["Ранний", "Поздний"])
+        #expect(exported.tasks.first { $0.title == "Ранний" }?.priorityMarks == "!!!")
+        #expect(Set(exported.orders.keys) == Set(SortMode.allCases.map(\.rawValue)))
+    }
+
+    @Test func widgetLinkRoundTrip() {
+        let id = UUID()
+        #expect(WidgetLink(url: WidgetLink.list(id).url) == .list(id))
+        #expect(WidgetLink(url: WidgetLink.task(id).url) == .task(id))
+        #expect(WidgetLink(url: URL(string: "https://list/\(id)")!) == nil)
+    }
+}
