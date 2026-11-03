@@ -14,7 +14,8 @@ struct TaskListEntity: AppEntity {
 
 struct TaskListQuery: EntityQuery {
     private var all: [TaskListEntity] {
-        (WidgetSnapshot.load()?.lists ?? []).map { TaskListEntity(id: $0.id, name: $0.name) }
+        guard let snapshot = WidgetSnapshot.load() else { return [] }
+        return ([snapshot.today].compactMap { $0 } + snapshot.lists).map { TaskListEntity(id: $0.id, name: $0.name) }
     }
 
     func entities(for identifiers: [UUID]) async throws -> [TaskListEntity] {

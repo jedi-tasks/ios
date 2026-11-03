@@ -37,6 +37,11 @@ struct TaskListProvider: AppIntentTimelineProvider {
         guard let snapshot = WidgetSnapshot.load(), !snapshot.lists.isEmpty else {
             return TaskListEntry(date: Date(), content: .noData)
         }
+        if configuration.list?.id == WidgetSnapshot.todayId, let today = snapshot.today {
+            let day = DayKey.today
+            let tasks = today.sortedTasks(by: configuration.sort.sortMode).filter { $0.isDue(on: day) }
+            return TaskListEntry(date: Date(), content: .tasks(today, tasks))
+        }
         let list = configuration.list.map { selected in snapshot.lists.first { $0.id == selected.id } } ?? snapshot.inbox
         guard let list else { return TaskListEntry(date: Date(), content: .listDeleted) }
         return TaskListEntry(date: Date(), content: .tasks(list, list.sortedTasks(by: configuration.sort.sortMode)))

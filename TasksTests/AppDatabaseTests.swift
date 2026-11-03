@@ -379,6 +379,20 @@ struct WidgetSnapshotTests {
         #expect(Set(exported.orders.keys) == Set(SortMode.allCases.map(\.rawValue)))
     }
 
+    @Test func todayKeepsDatedTasksAndFiltersByDay() {
+        let list = TaskList(name: "Работа")
+        let due = TaskItem(listId: list.id, title: "Срок сегодня", plannedDay: "2026-11-03")
+        let later = TaskItem(listId: list.id, title: "Позже", plannedDay: "2026-11-04")
+        let undated = TaskItem(listId: list.id, title: "Без срока")
+        let board = Board(lists: [list], rows: [due, later, undated].map { TaskRow(task: $0, tags: [], blockers: []) })
+
+        let today = WidgetSnapshot(board: board).today!
+
+        #expect(Set(today.tasks.map(\.title)) == ["Срок сегодня", "Позже"])
+        #expect(today.sortedTasks(by: nil).filter { $0.isDue(on: "2026-11-03") }.map(\.title) == ["Срок сегодня"])
+        #expect(today.sortedTasks(by: nil).filter { $0.isDue(on: "2026-11-04") }.count == 2)
+    }
+
     @Test func widgetLinkRoundTrip() {
         let id = UUID()
         #expect(WidgetLink(url: WidgetLink.list(id).url) == .list(id))

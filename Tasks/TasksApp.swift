@@ -119,7 +119,9 @@ struct TabRoot: View {
         .onChange(of: openedList, initial: true) {
             guard let id = openedList else { return }
             openedList = nil
-            if id == board.inbox?.id {
+            if id == WidgetSnapshot.todayId {
+                tab = .today
+            } else if id == board.inbox?.id {
                 tab = .inbox
             } else {
                 listsOpened = .list(id)
