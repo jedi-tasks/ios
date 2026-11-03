@@ -313,14 +313,17 @@ struct AppDatabase: Sendable {
         }
     }
 
-    /// Новая задача; без списка — в Inbox.
+    /// Новая задача; без списка — в Inbox. `applying` — быстрые действия, выбранные при создании.
     @discardableResult
-    func addTask(title: String, listId: UUID?, sectionId: UUID? = nil, plannedDay: String? = nil) throws -> TaskItem {
+    func addTask(title: String, listId: UUID?, sectionId: UUID? = nil, plannedDay: String? = nil,
+                 applying actions: [Assignment] = []) throws -> TaskItem {
         let target = try listId ?? writer.read { db in
             try TaskList.filter(Column("isInbox") == true && Column("deletedAt") == nil).fetchOne(db)?.id
         }
         guard let target else { throw DatabaseError(message: "Нет Inbox: дождитесь синхронизации с сервером") }
-        return try saveTask(TaskItem(listId: target, sectionId: sectionId, title: title, plannedDay: plannedDay))
+        let task = try saveTask(TaskItem(listId: target, sectionId: sectionId, title: title, plannedDay: plannedDay))
+        for action in actions { try assign(action, to: task.id) }
+        return task
     }
 
     /// Выполнение снимает блокеры, где задача — блокирующая (сервер сам этого не делает).

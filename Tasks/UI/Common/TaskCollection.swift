@@ -49,6 +49,23 @@ struct TaskCollection: View {
     }
 }
 
+/// Заглушка пустой ленты: всё сделано, можно порадоваться. Тапы проходят к ленте — под ней создаётся задача.
+struct AllDoneView: View {
+    let title: String
+    let message: String
+
+    var body: some View {
+        ContentUnavailableView {
+            Label(title, systemImage: "sparkles")
+                .symbolRenderingMode(.multicolor)
+                .symbolEffect(.bounce, options: .nonRepeating)
+        } description: {
+            Text(message)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
 extension EnvironmentValues {
     /// Открыть карточку задачи из ячейки `TaskCollection`.
     @Entry var openTask: ((UUID) -> Void)? = nil
@@ -215,7 +232,15 @@ private struct Representable: UIViewControllerRepresentable {
 
         /// Протяжка двумя пальцами (на Mac — Cmd/Shift-клик) сразу включает режим выбора.
         func collectionView(_ collectionView: UICollectionView, shouldBeginMultipleSelectionInteractionAt indexPath: IndexPath) -> Bool {
-            taskId(at: indexPath) != nil
+            // В раскрытой задаче протяжка и двойной клик выделяют текст названия
+            guard let id = taskId(at: indexPath), selection?.expanded != id else { return false }
+            #if targetEnvironment(macCatalyst)
+            // На Mac система начинает выбор и от простой протяжки мышью — оставляем только Cmd/Shift-клик
+            let flags = (collectionView.gestureRecognizers ?? []).reduce(into: UIKeyModifierFlags()) { $0.formUnion($1.modifierFlags) }
+            return flags.contains(.command) || flags.contains(.shift)
+            #else
+            return true
+            #endif
         }
 
         func collectionView(_ collectionView: UICollectionView, didBeginMultipleSelectionInteractionAt indexPath: IndexPath) {
@@ -257,7 +282,8 @@ private struct Representable: UIViewControllerRepresentable {
         /// Тянется отмеченная задача — значит, все отмеченные, как в Напоминаниях.
         func collectionView(_ collectionView: UICollectionView, itemsForBeginning session: UIDragSession,
                             at indexPath: IndexPath) -> [UIDragItem] {
-            guard let id = taskId(at: indexPath) else { return [] }
+            // Протяжка в раскрытой задаче выделяет текст, а не тащит строку
+            guard let id = taskId(at: indexPath), selection?.expanded != id else { return [] }
             var ids = [id]
             if let selection, selection.isSelecting, selection.selected.contains(id) { ids = Array(selection.selected) }
             let provider = NSItemProvider(object: DragPayload.tasks(ids) as NSString)

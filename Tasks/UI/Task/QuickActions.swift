@@ -87,9 +87,13 @@ struct ExpandedTaskRow: View {
 
 /// Быстрые действия под раскрытой задачей: приоритет, срок, дедлайн, длительность, список, тег, блокеры, заметка.
 /// На кнопках — текущее значение; пустые приглушены.
+/// У ещё не созданной задачи (`onDraftAssign`) выбор копится в черновике, а блокеров и заметки нет: им нужна задача в базе.
 struct QuickActions: View {
     let row: TaskRow
     let board: Board
+    var onDraftAssign: ((AppDatabase.Assignment) -> Void)?
+    /// Открыт ли выбор даты: лист забирает фокус у строки ввода, и закрывать её при этом нельзя.
+    var onPickingDate: ((Bool) -> Void)?
     @Environment(\.database) private var database
     @State private var picking: DateKind?
     @State private var pickingBlocker = false
@@ -141,12 +145,14 @@ struct QuickActions: View {
                     }
                 }
 
-                blockersMenu
+                if onDraftAssign == nil {
+                    blockersMenu
 
-                Button { editingNotes = true } label: {
-                    chip("Заметка", icon: "note.text", isSet: !row.task.notes.isEmpty)
+                    Button { editingNotes = true } label: {
+                        chip("Заметка", icon: "note.text", isSet: !row.task.notes.isEmpty)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             .tint(.primary) // не цветом списка
         }
@@ -170,6 +176,7 @@ struct QuickActions: View {
                 assign(kind == .planned ? .plannedDay(day) : .deadlineDay(day))
             }
         }
+        .onChange(of: picking) { onPickingDate?(picking != nil) }
         .errorAlert(errors)
     }
 
@@ -221,6 +228,7 @@ struct QuickActions: View {
     }
 
     private func assign(_ assignment: AppDatabase.Assignment) {
+        if let onDraftAssign { return onDraftAssign(assignment) }
         errors.run { try database.assign(assignment, to: row.id) }
     }
 }

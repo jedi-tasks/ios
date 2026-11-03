@@ -135,7 +135,7 @@ struct FilteredScreen: View {
     var body: some View {
         let rows = board.rows(matching: filter)
         TaskCollection(items: rows.map { .task($0, showList: board.list($0.task.listId)?.name) }, board: board)
-        .overlay { if rows.isEmpty { ContentUnavailableView("Нет задач", systemImage: "tray") } }
+        .overlay { if rows.isEmpty { AllDoneView(title: "Всё сделано", message: "Здесь больше нет задач ☕️") } }
         .navigationTitle(board.title(of: filter))
         .navigationDestination(for: UUID.self) { TaskDetailScreen(taskId: $0) }
         .taskSelection(board: board)
